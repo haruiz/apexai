@@ -1,0 +1,24 @@
+[project]
+name = "apexai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "haruiz", email = "henryruiz22@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pandas",
+    "sse-starlette",
+]
+
+[project.scripts]
+apexai = "apexai:main"
+apexai-server = "apexai.server.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
