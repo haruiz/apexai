@@ -1,0 +1,3 @@
+[submodule "mobile"]
+	path = mobile
+	url = git@github.com:seagomezar/sonoma-racing-coach.git

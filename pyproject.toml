@@ -1,7 +1,7 @@
 [project]
 name = "apexai"
 version = "0.1.0"
-description = "Add your description here"
+description = "Real-time AI coaching application for track-day drivers with a telemetry server, Android app, and web UI"
 readme = "README.md"
 authors = [
     { name = "haruiz", email = "henryruiz22@gmail.com" }
@@ -13,12 +13,28 @@ dependencies = [
     "pydantic",
     "pandas",
     "sse-starlette",
+    "python-can",
+    "cantools",
 ]
 
 [project.scripts]
 apexai = "apexai:main"
 apexai-server = "apexai.server.main:main"
+apexai-ui = "apexai.ui.main:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/apexai"]
+artifacts = [
+    "src/apexai/ui/static/**",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/apexai",
+    "README.md",
+    "pyproject.toml",
+]

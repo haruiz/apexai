@@ -4,40 +4,43 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from .broadcaster import Broadcaster
 from .config import ServerConfig
-from .replay_engine import ReplayEngine
 from .schemas import (
     ReplayState,
     SeekRequest,
     SpeedUpdate,
     StreamIntervalUpdate,
     TelemetryPacket,
+    TelemetryTracePoint,
 )
+from .telemetry_sources import TelemetrySource
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcaster) -> FastAPI:
+def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broadcaster) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
         config: Runtime server configuration.
-        engine: Replay engine used by HTTP control routes.
+        source: Telemetry source used by HTTP control routes.
         broadcaster: Telemetry broadcaster used by streaming routes.
 
     Returns:
         Configured FastAPI application instance.
     """
 
-    app = FastAPI(title="ApexAI Telemetry Replay Server")
+    app = FastAPI(title="ApexAI Telemetry Streaming Server")
     app.state.config = config
-    app.state.engine = engine
+    app.state.source = source
     app.state.broadcaster = broadcaster
 
     app.add_middleware(
@@ -58,45 +61,46 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
     async def _startup() -> None:
         """Start replay during application startup when configured."""
 
-        logger.info("server started with %s samples", len(engine.samples))
+        logger.info("server started with source=%s samples=%s", config.source, len(source.samples))
         if config.autostart:
-            await engine.play()
+            await source.play()
 
     @app.get("/health")
     async def health() -> dict[str, object]:
         """Return a lightweight server health payload."""
 
-        return {"status": "ok", "samples": len(engine.samples), "replay": engine.state().status}
+        state = source.state()
+        return {"status": "ok", "source": state.source, "samples": len(source.samples), "replay": state.status}
 
     @app.get("/state", response_model=ReplayState)
     async def state() -> ReplayState:
         """Return the current replay state."""
 
-        return engine.state()
+        return source.state()
 
     @app.post("/replay/start", response_model=ReplayState)
     async def replay_start() -> ReplayState:
         """Start or resume telemetry replay."""
 
-        return await engine.play()
+        return await source.play()
 
     @app.post("/replay/pause", response_model=ReplayState)
     async def replay_pause() -> ReplayState:
         """Pause telemetry replay."""
 
-        return await engine.pause()
+        return await source.pause()
 
     @app.post("/replay/stop", response_model=ReplayState)
     async def replay_stop() -> ReplayState:
         """Stop telemetry replay and reset to the beginning."""
 
-        return await engine.stop()
+        return await source.stop()
 
     @app.post("/replay/reset", response_model=ReplayState)
     async def replay_reset() -> ReplayState:
         """Reset telemetry replay to the first sample."""
 
-        return await engine.reset()
+        return await source.reset()
 
     @app.post("/replay/speed", response_model=ReplayState)
     async def replay_speed(update: SpeedUpdate) -> ReplayState:
@@ -110,7 +114,7 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
         """
 
         try:
-            return await engine.set_speed(update.speed)
+            return await source.set_speed(update.speed)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -127,7 +131,7 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
         """
 
         try:
-            return await engine.set_stream_interval(update.seconds)
+            return await source.set_stream_interval(update.seconds)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -143,7 +147,7 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
         """
 
         try:
-            return await engine.seek(request.index)
+            return await source.seek(request.index)
         except IndexError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -151,7 +155,23 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
     async def telemetry_latest() -> TelemetryPacket | None:
         """Return the most recently published telemetry packet."""
 
-        return engine.latest_packet
+        return source.latest_packet
+
+    @app.get("/telemetry/trace", response_model=list[TelemetryTracePoint])
+    async def telemetry_trace() -> list[TelemetryTracePoint]:
+        """Return all GPS samples needed to preload the full race trace."""
+
+        return [
+            TelemetryTracePoint(
+                sequence=packet.sequence,
+                timestamp=packet.timestamp,
+                latitude=packet.latitude,
+                longitude=packet.longitude,
+                heading=packet.heading,
+            )
+            for packet in source.samples
+            if packet.latitude is not None and packet.longitude is not None
+        ]
 
     @app.websocket("/ws/telemetry")
     async def telemetry_websocket(websocket: WebSocket) -> None:
@@ -199,4 +219,17 @@ def create_app(config: ServerConfig, engine: ReplayEngine, broadcaster: Broadcas
 
         return EventSourceResponse(events())
 
+    _mount_packaged_ui(app)
+
     return app
+
+
+def _mount_packaged_ui(app: FastAPI) -> None:
+    """Serve the optional static Next.js UI when packaged assets exist."""
+
+    static_dir = Path(__file__).resolve().parents[1] / "ui" / "static"
+    if not (static_dir / "index.html").exists():
+        logger.debug("packaged telemetry UI not found at %s", static_dir)
+        return
+
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="apexai-ui")

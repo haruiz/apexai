@@ -87,6 +87,7 @@ class ReplayEngine:
             if self.status == "finished" and self.current_index >= len(self.samples):
                 self.current_index = 0
             self.status = "playing"
+            self._timing_changed.set()
             if self._task is None or self._task.done():
                 self._task = asyncio.create_task(self._run(), name="apexai-replay-engine")
         logger.info("replay started")
@@ -102,6 +103,7 @@ class ReplayEngine:
         async with self._lock:
             if self.status == "playing":
                 self.status = "paused"
+                self._timing_changed.set()
         logger.info("replay paused")
         return self.state()
 
@@ -116,6 +118,7 @@ class ReplayEngine:
             self.status = "stopped"
             self.current_index = 0
             self.latest_packet = None
+            self._timing_changed.set()
         logger.info("replay stopped")
         return self.state()
 
@@ -127,10 +130,10 @@ class ReplayEngine:
         """
 
         async with self._lock:
+            self.status = "idle"
             self.current_index = 0
             self.latest_packet = None
-            if self.status in {"finished", "stopped"}:
-                self.status = "idle"
+            self._timing_changed.set()
         logger.info("replay reset")
         return self.state()
 
@@ -154,6 +157,7 @@ class ReplayEngine:
             self.latest_packet = self.samples[index]
             if self.status == "finished":
                 self.status = "paused"
+            self._timing_changed.set()
         return self.state()
 
     async def set_speed(self, speed: float) -> ReplayState:
@@ -224,11 +228,16 @@ class ReplayEngine:
                 logger.info("replay finished")
                 continue
 
-            packet = self.samples[index]
-            self.latest_packet = packet
-            await self.broadcaster.publish(packet)
+            async with self._lock:
+                if self.status != "playing" or self.current_index != index:
+                    continue
+                packet = self.samples[index]
+                self.latest_packet = packet
+                await self.broadcaster.publish(packet)
 
             async with self._lock:
+                if self.status != "playing" or self.current_index != index:
+                    continue
                 self.current_index = index + 1
                 next_index = self.current_index
                 speed = self.replay_speed
