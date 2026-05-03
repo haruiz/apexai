@@ -85,6 +85,7 @@ class VBOTelemetrySource:
         self.loop = loop
         self.status = "idle"
         self.current_index = 0
+        self.simulation_time: float | None = None
         self.latest_packet: TelemetryPacket | None = None
         self._task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -153,6 +154,7 @@ class VBOTelemetrySource:
         async with self._lock:
             self.status = "stopped"
             self.current_index = 0
+            self.simulation_time = None
             self.latest_packet = None
             self._timing_changed.set()
         logger.info("vbo replay stopped")
@@ -162,6 +164,7 @@ class VBOTelemetrySource:
         async with self._lock:
             self.status = "idle"
             self.current_index = 0
+            self.simulation_time = None
             self.latest_packet = None
             self._timing_changed.set()
         logger.info("vbo replay reset")
@@ -172,6 +175,7 @@ class VBOTelemetrySource:
             raise IndexError(f"seek index {index} is outside sample range 0..{self.total_samples - 1}")
         async with self._lock:
             self.current_index = index
+            self.simulation_time = None
             self.latest_packet = self._get_packet(index)
             if self.status == "finished":
                 self.status = "paused"
@@ -196,6 +200,40 @@ class VBOTelemetrySource:
         logger.info("vbo stream interval set to %s", seconds)
         return self.state()
 
+    def _interpolate_packet(self, p1: TelemetryPacket, p2: TelemetryPacket, timestamp: float) -> TelemetryPacket:
+        if p2.timestamp == p1.timestamp:
+            return p1.model_copy(deep=True)
+            
+        ratio = (timestamp - p1.timestamp) / (p2.timestamp - p1.timestamp)
+        
+        def interp(v1: float | None, v2: float | None) -> float | None:
+            if v1 is None or v2 is None:
+                return v1 if v1 is not None else v2
+            return v1 + ratio * (v2 - v1)
+            
+        packet = p1.model_copy(deep=True)
+        packet.timestamp = timestamp
+        packet.latitude = interp(p1.latitude, p2.latitude)
+        packet.longitude = interp(p1.longitude, p2.longitude)
+        packet.speed = interp(p1.speed, p2.speed)
+        
+        if p1.heading is not None and p2.heading is not None:
+            diff = p2.heading - p1.heading
+            if diff > 180:
+                diff -= 360
+            elif diff < -180:
+                diff += 360
+            packet.heading = (p1.heading + ratio * diff) % 360
+        else:
+            packet.heading = p1.heading if p1.heading is not None else p2.heading
+            
+        packet.altitude = interp(p1.altitude, p2.altitude)
+        packet.throttle = interp(p1.throttle, p2.throttle)
+        packet.brake = interp(p1.brake, p2.brake)
+        packet.steering = interp(p1.steering, p2.steering)
+        
+        return packet
+
     async def _run(self) -> None:
         while True:
             async with self._lock:
@@ -210,6 +248,7 @@ class VBOTelemetrySource:
                 async with self._lock:
                     if self.loop:
                         self.current_index = 0
+                        self.simulation_time = None
                         continue
                     self.status = "finished"
                 logger.info("vbo replay finished")
@@ -223,33 +262,62 @@ class VBOTelemetrySource:
                     self.current_index = index + 1
                     continue
                 
-                self.latest_packet = packet
-                await self.broadcaster.publish(packet)
-
-            async with self._lock:
-                if self.status != "playing" or self.current_index != index:
-                    continue
-                self.current_index = index + 1
-                next_index = self.current_index
                 speed = self.replay_speed
                 stream_interval = self.stream_interval
-                self._timing_changed.clear()
-
-            if next_index >= self.total_samples:
-                await asyncio.sleep(0)
-                continue
-
-            if stream_interval is None:
-                next_packet = self._get_packet(next_index)
-                if next_packet:
-                    interval = next_packet.timestamp - packet.timestamp
-                    if interval <= 0 or interval > 60:
-                        interval = 0.1
+                
+                if stream_interval is not None:
+                    if self.simulation_time is None:
+                        self.simulation_time = packet.timestamp
+                        
+                    while self.current_index < self.total_samples:
+                        p1 = self._get_packet(self.current_index)
+                        p2 = self._get_packet(self.current_index + 1)
+                        if p1 is None:
+                            break
+                        if p2 is None:
+                            if self.simulation_time > p1.timestamp:
+                                self.current_index += 1
+                            break
+                        if self.simulation_time <= p2.timestamp:
+                            break
+                        self.current_index += 1
+                        
+                    index = self.current_index
+                    if index >= self.total_samples:
+                        self._timing_changed.clear()
+                        continue
+                        
+                    p1 = self._get_packet(index)
+                    p2 = self._get_packet(index + 1)
+                    
+                    if p1 and p2 and p1.timestamp <= self.simulation_time <= p2.timestamp:
+                        pub_packet = self._interpolate_packet(p1, p2, self.simulation_time)
+                    else:
+                        pub_packet = p1 or packet
+                        
+                    self.latest_packet = pub_packet
+                    await self.broadcaster.publish(pub_packet)
+                    
+                    self.simulation_time += stream_interval * speed
+                    interval = stream_interval
                 else:
-                    interval = 0.1
-                interval = interval / speed
-            else:
-                interval = stream_interval
+                    self.simulation_time = None
+                    self.latest_packet = packet
+                    await self.broadcaster.publish(packet)
+                    
+                    self.current_index = index + 1
+                    next_index = self.current_index
+                    
+                    next_packet = self._get_packet(next_index)
+                    if next_packet:
+                        interval = next_packet.timestamp - packet.timestamp
+                        if interval <= 0 or interval > 60:
+                            interval = 0.1
+                    else:
+                        interval = 0.1
+                    interval = interval / speed
+
+                self._timing_changed.clear()
 
             try:
                 await asyncio.wait_for(self._timing_changed.wait(), timeout=interval)
