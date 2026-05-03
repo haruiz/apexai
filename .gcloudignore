@@ -1,0 +1,14 @@
+.git
+.gitignore
+.gitmodules
+.idea
+.python-version
+.venv
+__pycache__/
+*.pyc
+ui/node_modules/
+ui/.next/
+mobile/
+dashboard/
+tests/
+Makefile

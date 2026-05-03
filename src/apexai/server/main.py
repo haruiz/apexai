@@ -18,7 +18,7 @@ import uvicorn
 from .api import create_app
 from .broadcaster import Broadcaster
 from .config import ServerConfig
-from .telemetry_sources import CANTelemetrySource, TelemetrySource, VBOTelemetrySource
+from .telemetry_sources import CANTelemetrySource, ParsedVBO, TelemetrySource, VBOTelemetrySource
 from .vbo_parser import VBOParseError, parse_vbo_file
 
 
@@ -61,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--vbo-file",
-        help="Path to the Racelogic VBOX .vbo file. Required when --source vbo.",
+        nargs="+",
+        help="Path to one or more Racelogic VBOX .vbo files. Required when --source vbo.",
     )
     parser.add_argument(
         "--dbc-file",
@@ -152,7 +153,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("--stream-interval must be greater than zero")
     config = ServerConfig(
         source=args.source,
-        vbo_file=Path(args.vbo_file) if args.vbo_file else None,
+        vbo_files=[Path(f) for f in args.vbo_file] if args.vbo_file else [],
         dbc_file=Path(args.dbc_file) if args.dbc_file else None,
         can_interface=args.can_interface,
         can_channel=args.can_channel,
@@ -208,34 +209,70 @@ def _build_source(
             None,
         )
 
-    if config.vbo_file is None:
+    if not config.vbo_files:
         raise SystemExit("--vbo-file is required when --source vbo")
 
-    try:
-        samples, columns, duration = parse_vbo_file(config.vbo_file)
-    except (FileNotFoundError, VBOParseError) as exc:
-        logging.getLogger(__name__).error("%s", exc)
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        logging.getLogger(__name__).exception("failed to parse VBO file")
-        raise SystemExit(1) from exc
+    parsed_vbos: list[ParsedVBO] = []
+    all_columns = []
+    total_duration = 0.0
+    current_time_offset = 0.0
+    current_sequence_offset = 0
+    last_timestamp = None
 
-    if not samples:
-        logging.getLogger(__name__).error("no telemetry samples parsed from %s", config.vbo_file)
+    for vbo_file in config.vbo_files:
+        try:
+            lines, columns, first_ts, last_ts = parse_vbo_file(vbo_file)
+        except (FileNotFoundError, VBOParseError) as exc:
+            logging.getLogger(__name__).error("%s", exc)
+            raise SystemExit(1) from exc
+        except Exception as exc:
+            logging.getLogger(__name__).exception("failed to parse VBO file %s", vbo_file)
+            raise SystemExit(1) from exc
+
+        if not lines:
+            continue
+
+        time_offset = 0.0
+        if last_timestamp is not None and first_ts is not None:
+            time_offset = current_time_offset + (last_timestamp + 1.0 - first_ts)
+            current_time_offset = time_offset
+            
+        parsed_vbos.append(
+            ParsedVBO(
+                file_path=str(vbo_file),
+                columns=columns,
+                data_lines=lines,
+                first_timestamp=first_ts,
+                last_timestamp=last_ts,
+                sequence_offset=current_sequence_offset,
+                time_offset=time_offset,
+            )
+        )
+        
+        current_sequence_offset += len(lines)
+        if last_ts is not None:
+            last_timestamp = last_ts
+        for col in columns:
+            if col not in all_columns:
+                all_columns.append(col)
+        if last_ts is not None and first_ts is not None:
+            total_duration += max(0.0, last_ts - first_ts)
+
+    if not parsed_vbos:
+        logging.getLogger(__name__).error("no telemetry samples parsed from any VBO files")
         raise SystemExit(1)
 
     return (
         VBOTelemetrySource(
-            samples,
+            parsed_vbos,
             broadcaster,
-            vbo_file=config.vbo_file,
             replay_speed=config.replay_speed,
             stream_interval=config.stream_interval,
             loop=config.loop,
         ),
-        len(samples),
-        columns,
-        duration,
+        current_sequence_offset,
+        all_columns,
+        total_duration,
     )
 
 
@@ -268,7 +305,8 @@ def _print_summary(
         print(f"  CAN channel: {config.can_channel}")
         print(f"  CAN bitrate: {config.can_bitrate or 'interface default'}")
     else:
-        print(f"  VBO file: {config.vbo_file}")
+        file_names = ", ".join(f.name for f in config.vbo_files)
+        print(f"  VBO files: {file_names}")
         print(f"  Samples: {sample_count}")
         print(f"  Columns: {', '.join(columns)}")
         print(f"  Approx duration: {duration_text}")

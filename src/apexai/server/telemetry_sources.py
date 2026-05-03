@@ -1,20 +1,4 @@
-"""Async telemetry source implementations for VBO replay and live CAN input.
-
-The server has one set of output transports: HTTP control routes, Server-Sent
-Events, and WebSocket. Those transports should not need to know whether packets
-came from a recorded VBO file or a live CAN bus. This module provides that
-separation by defining a shared ``TelemetrySource`` control surface plus two
-concrete producers:
-
-* ``VBOTelemetrySource`` replays already parsed ``TelemetryPacket`` rows with
-  either source timestamps or a configured fixed interval.
-* ``CANTelemetrySource`` reads raw CAN frames through ``python-can``, decodes
-  them with a DBC file through ``cantools``, normalizes common signal names into
-  ``TelemetryPacket``, and publishes packets as they arrive.
-
-Both classes publish to ``Broadcaster``. The broadcaster then fans packets out
-to every SSE or WebSocket client.
-"""
+"""Async telemetry source implementations for VBO replay and live CAN input."""
 
 from __future__ import annotations
 
@@ -22,28 +6,32 @@ import asyncio
 import contextlib
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from .broadcaster import Broadcaster
-from .schemas import ReplayState, TelemetryPacket
+from .schemas import ReplayState, TelemetryPacket, TelemetryTracePoint
+from .vbo_parser import parse_vbo_line
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class ParsedVBO:
+    file_path: str
+    columns: list[str]
+    data_lines: list[str]
+    first_timestamp: float | None
+    last_timestamp: float | None
+    sequence_offset: int
+    time_offset: float
+
+
 class TelemetrySource(Protocol):
-    """Control surface shared by telemetry producers used by the API.
+    """Control surface shared by telemetry producers used by the API."""
 
-    FastAPI routes call this protocol instead of calling a concrete VBO or CAN
-    class. That keeps route handlers stable while allowing the command line to
-    choose a telemetry source at startup.
-
-    ``samples`` is populated for recorded sources like VBO and remains empty for
-    live sources like CAN. ``latest_packet`` always tracks the most recent packet
-    published by the active source.
-    """
-
-    samples: list[TelemetryPacket]
+    total_samples: int
     latest_packet: TelemetryPacket | None
 
     def state(self) -> ReplayState:
@@ -70,44 +58,26 @@ class TelemetrySource(Protocol):
     async def set_stream_interval(self, seconds: float | None) -> ReplayState:
         """Set output cadence or clear throttling for source-driven timing."""
 
+    def trace(self) -> list[TelemetryTracePoint]:
+        """Return all GPS samples needed to preload the full race trace."""
+
 
 class VBOTelemetrySource:
-    """Replay parsed VBO packets through the shared telemetry broadcaster.
-
-    VBO is an offline recording format. The parser has already converted each
-    row into a normalized ``TelemetryPacket`` before this class is constructed.
-    This source is responsible only for replay control: current index, timing,
-    looping, speed changes, seeking, and publishing packets in order.
-    """
+    """Replay parsed VBO packets through the shared telemetry broadcaster."""
 
     def __init__(
         self,
-        samples: list[TelemetryPacket],
+        vbos: list[ParsedVBO],
         broadcaster: Broadcaster,
         *,
-        vbo_file: str | Path,
         replay_speed: float = 1.0,
         stream_interval: float | None = None,
         loop: bool = False,
     ) -> None:
-        """Initialize a VBO replay source.
-
-        Args:
-            samples: Timestamp-sorted packets parsed from a VBO file.
-            broadcaster: Fan-out publisher used by SSE and WebSocket endpoints.
-            vbo_file: Original VBO path, stored for state and diagnostics.
-            replay_speed: Multiplier applied to source timestamp intervals.
-            stream_interval: Fixed seconds between packets. When ``None``, the
-                source uses intervals from the VBO timestamps.
-            loop: Whether replay should restart after the final packet.
-
-        Raises:
-            ValueError: If ``stream_interval`` is not positive.
-        """
-
-        self.samples = samples
+        self.vbos = vbos
         self.broadcaster = broadcaster
-        self.vbo_file = str(vbo_file)
+        self.vbo_file = ", ".join(Path(v.file_path).name for v in vbos)
+        self.total_samples = sum(len(v.data_lines) for v in vbos)
         self.replay_speed = max(replay_speed, 0.01)
         if stream_interval is not None and stream_interval <= 0:
             raise ValueError("stream interval must be greater than zero")
@@ -121,18 +91,11 @@ class VBOTelemetrySource:
         self._timing_changed = asyncio.Event()
 
     def state(self) -> ReplayState:
-        """Return the current VBO replay state.
-
-        The returned object is used by ``GET /state`` and by replay control
-        responses. ``current_index`` is the next VBO sample that will be
-        published, not the last one already sent.
-        """
-
         return ReplayState(
             status=self.status,
             source="vbo",
             current_index=self.current_index,
-            total_samples=len(self.samples),
+            total_samples=self.total_samples,
             replay_speed=self.replay_speed,
             stream_interval=self.stream_interval,
             loop=self.loop,
@@ -140,16 +103,36 @@ class VBOTelemetrySource:
             source_file=self.vbo_file,
         )
 
+    def _get_packet(self, index: int) -> TelemetryPacket | None:
+        for vbo in self.vbos:
+            if index < len(vbo.data_lines):
+                packet = parse_vbo_line(index + vbo.sequence_offset, vbo.data_lines[index], vbo.columns)
+                if packet:
+                    packet.timestamp += vbo.time_offset
+                return packet
+            index -= len(vbo.data_lines)
+        return None
+
+    def trace(self) -> list[TelemetryTracePoint]:
+        """Iterate all lines on the fly to build the map trace without memory bloat."""
+        trace_points = []
+        for i in range(self.total_samples):
+            packet = self._get_packet(i)
+            if packet and packet.latitude is not None and packet.longitude is not None:
+                trace_points.append(
+                    TelemetryTracePoint(
+                        sequence=packet.sequence,
+                        timestamp=packet.timestamp,
+                        latitude=packet.latitude,
+                        longitude=packet.longitude,
+                        heading=packet.heading,
+                    )
+                )
+        return trace_points
+
     async def play(self) -> ReplayState:
-        """Start or resume replay.
-
-        If replay had finished at the end of the file, this moves the index back
-        to the first sample. The background task is created lazily and reused for
-        later pause/resume cycles.
-        """
-
         async with self._lock:
-            if self.status == "finished" and self.current_index >= len(self.samples):
+            if self.status == "finished" and self.current_index >= self.total_samples:
                 self.current_index = 0
             self.status = "playing"
             self._timing_changed.set()
@@ -159,12 +142,6 @@ class VBOTelemetrySource:
         return self.state()
 
     async def pause(self) -> ReplayState:
-        """Pause replay without changing the current sample index.
-
-        The timing event wakes the background task if it is sleeping between
-        packets, so pause takes effect promptly.
-        """
-
         async with self._lock:
             if self.status == "playing":
                 self.status = "paused"
@@ -173,12 +150,6 @@ class VBOTelemetrySource:
         return self.state()
 
     async def stop(self) -> ReplayState:
-        """Stop replay and reset it to the beginning.
-
-        This also clears ``latest_packet`` so ``/telemetry/latest`` reflects
-        that replay is no longer holding a current sample.
-        """
-
         async with self._lock:
             self.status = "stopped"
             self.current_index = 0
@@ -188,8 +159,6 @@ class VBOTelemetrySource:
         return self.state()
 
     async def reset(self) -> ReplayState:
-        """Reset replay position without forcing playback to start."""
-
         async with self._lock:
             self.status = "idle"
             self.current_index = 0
@@ -199,31 +168,17 @@ class VBOTelemetrySource:
         return self.state()
 
     async def seek(self, index: int) -> ReplayState:
-        """Move replay to a specific telemetry sample index.
-
-        Seeking is only meaningful for recorded sources. The selected packet is
-        also stored as ``latest_packet`` so the HTTP latest endpoint immediately
-        reflects the new position.
-        """
-
-        if index < 0 or index >= len(self.samples):
-            raise IndexError(f"seek index {index} is outside sample range 0..{len(self.samples) - 1}")
+        if index < 0 or index >= self.total_samples:
+            raise IndexError(f"seek index {index} is outside sample range 0..{self.total_samples - 1}")
         async with self._lock:
             self.current_index = index
-            self.latest_packet = self.samples[index]
+            self.latest_packet = self._get_packet(index)
             if self.status == "finished":
                 self.status = "paused"
             self._timing_changed.set()
         return self.state()
 
     async def set_speed(self, speed: float) -> ReplayState:
-        """Set the replay speed multiplier.
-
-        The multiplier only applies when ``stream_interval`` is ``None``. Fixed
-        stream intervals are already explicit wall-clock delays, so they are not
-        divided by replay speed.
-        """
-
         if speed <= 0:
             raise ValueError("replay speed must be greater than zero")
         async with self._lock:
@@ -233,13 +188,6 @@ class VBOTelemetrySource:
         return self.state()
 
     async def set_stream_interval(self, seconds: float | None) -> ReplayState:
-        """Set or clear the fixed interval between streamed packets.
-
-        Passing ``None`` restores source timestamp timing from the VBO file.
-        Passing a positive value forces an exact output cadence, which is useful
-        for testing phone or UI behavior at a known frequency.
-        """
-
         if seconds is not None and seconds <= 0:
             raise ValueError("stream interval must be greater than zero")
         async with self._lock:
@@ -249,14 +197,6 @@ class VBOTelemetrySource:
         return self.state()
 
     async def _run(self) -> None:
-        """Publish telemetry packets until paused, stopped, or finished.
-
-        This task intentionally stays alive while paused or stopped. Keeping the
-        task alive avoids repeatedly allocating tasks and makes resume fast. All
-        shared mutable state is read or changed under ``_lock`` so API calls and
-        packet publication cannot race the current index.
-        """
-
         while True:
             async with self._lock:
                 status = self.status
@@ -266,7 +206,7 @@ class VBOTelemetrySource:
                 await asyncio.sleep(0.05)
                 continue
 
-            if index >= len(self.samples):
+            if index >= self.total_samples:
                 async with self._lock:
                     if self.loop:
                         self.current_index = 0
@@ -278,7 +218,11 @@ class VBOTelemetrySource:
             async with self._lock:
                 if self.status != "playing" or self.current_index != index:
                     continue
-                packet = self.samples[index]
+                packet = self._get_packet(index)
+                if packet is None:
+                    self.current_index = index + 1
+                    continue
+                
                 self.latest_packet = packet
                 await self.broadcaster.publish(packet)
 
@@ -291,13 +235,17 @@ class VBOTelemetrySource:
                 stream_interval = self.stream_interval
                 self._timing_changed.clear()
 
-            if next_index >= len(self.samples):
+            if next_index >= self.total_samples:
                 await asyncio.sleep(0)
                 continue
 
             if stream_interval is None:
-                interval = self.samples[next_index].timestamp - packet.timestamp
-                if interval <= 0 or interval > 60:
+                next_packet = self._get_packet(next_index)
+                if next_packet:
+                    interval = next_packet.timestamp - packet.timestamp
+                    if interval <= 0 or interval > 60:
+                        interval = 0.1
+                else:
                     interval = 0.1
                 interval = interval / speed
             else:
@@ -310,18 +258,7 @@ class VBOTelemetrySource:
 
 
 class CANTelemetrySource:
-    """Read live CAN frames, decode them with a DBC, and publish telemetry.
-
-    CAN is a live protocol, not a recorded table. A CAN adapter can be attached
-    through SocketCAN, virtual CAN, a serial USB-C adapter using ``slcan``, or
-    another ``python-can`` backend. Each frame is decoded with the configured DBC
-    file, then common signal names are mapped into the normalized telemetry
-    fields used by the UI and Android client.
-
-    Unknown or vehicle-specific decoded signals are not discarded. They are
-    preserved in ``TelemetryPacket.raw`` so downstream clients can still inspect
-    them before the normalization map is tuned for a specific car or sensor box.
-    """
+    """Read live CAN frames, decode them with a DBC, and publish telemetry."""
 
     DEFAULT_SIGNAL_MAP: dict[str, tuple[str, ...]] = {
         "latitude": ("Latitude", "latitude", "GPSLatitude"),
@@ -346,25 +283,12 @@ class CANTelemetrySource:
         can_interface: str = "socketcan",
         bitrate: int | None = None,
     ) -> None:
-        """Initialize a live CAN source.
-
-        Args:
-            broadcaster: Fan-out publisher used by SSE and WebSocket endpoints.
-            dbc_file: DBC file used by ``cantools`` to decode raw CAN payloads.
-            can_channel: Channel understood by ``python-can``. Examples include
-                ``can0``, ``vcan0``, ``test``, or ``/dev/ttyUSB0``.
-            can_interface: ``python-can`` backend name, such as ``socketcan``,
-                ``slcan``, ``virtual``, ``pcan``, or ``vector``.
-            bitrate: Optional bus bitrate. Some interfaces require this, while
-                SocketCAN devices are often configured by the OS before startup.
-        """
-
         self.broadcaster = broadcaster
         self.dbc_file = str(dbc_file)
         self.can_channel = can_channel
         self.can_interface = can_interface
         self.bitrate = bitrate
-        self.samples: list[TelemetryPacket] = []
+        self.total_samples = 0
         self.latest_packet: TelemetryPacket | None = None
         self.status = "idle"
         self.current_index = 0
@@ -374,14 +298,10 @@ class CANTelemetrySource:
         self._database: Any | None = None
         self._bus: Any | None = None
 
+    def trace(self) -> list[TelemetryTracePoint]:
+        return []
+
     def state(self) -> ReplayState:
-        """Return the current CAN ingest state.
-
-        ``current_index`` counts packets published since startup or reset. CAN
-        does not have a finite sample count, so ``total_samples`` is always
-        zero.
-        """
-
         return ReplayState(
             status=self.status,
             source="can",
@@ -397,13 +317,6 @@ class CANTelemetrySource:
         )
 
     async def play(self) -> ReplayState:
-        """Start or resume live CAN ingest.
-
-        The DBC and bus are opened lazily by the background task. This means the
-        server can boot and report configuration before touching hardware, and
-        failures are isolated to the CAN source task.
-        """
-
         async with self._lock:
             self.status = "playing"
             if self._task is None or self._task.done():
@@ -412,12 +325,6 @@ class CANTelemetrySource:
         return self.state()
 
     async def pause(self) -> ReplayState:
-        """Pause live CAN publishing while keeping the bus task alive.
-
-        Frames are not buffered while paused; the source simply stops reading and
-        publishing until playback resumes.
-        """
-
         async with self._lock:
             if self.status == "playing":
                 self.status = "paused"
@@ -425,12 +332,6 @@ class CANTelemetrySource:
         return self.state()
 
     async def stop(self) -> ReplayState:
-        """Stop live CAN ingest and close the bus.
-
-        The background task is cancelled and the hardware/virtual bus is shut
-        down so USB or SocketCAN resources are released cleanly.
-        """
-
         async with self._lock:
             self.status = "stopped"
             self.latest_packet = None
@@ -448,8 +349,6 @@ class CANTelemetrySource:
         return self.state()
 
     async def reset(self) -> ReplayState:
-        """Reset counters and latest packet for live CAN ingest."""
-
         async with self._lock:
             self.current_index = 0
             self.latest_packet = None
@@ -459,28 +358,14 @@ class CANTelemetrySource:
         return self.state()
 
     async def seek(self, index: int) -> ReplayState:
-        """Reject seek requests because live CAN streams are not indexed."""
-
         raise IndexError("seek is not supported for live CAN streams")
 
     async def set_speed(self, speed: float) -> ReplayState:
-        """Reject replay speed changes because live CAN timing is source-driven.
-
-        CAN data arrives from the vehicle or simulator at its own cadence. Use
-        ``set_stream_interval`` to throttle output frequency instead.
-        """
-
         if speed <= 0:
             raise ValueError("replay speed must be greater than zero")
         raise ValueError("replay speed is not supported for live CAN streams")
 
     async def set_stream_interval(self, seconds: float | None) -> ReplayState:
-        """Throttle CAN publication to a fixed interval, or publish every frame.
-
-        ``None`` publishes every decoded CAN frame. A positive value limits
-        publication frequency, for example ``0.1`` seconds for roughly 10 Hz.
-        """
-
         if seconds is not None and seconds <= 0:
             raise ValueError("stream interval must be greater than zero")
         async with self._lock:
@@ -489,14 +374,6 @@ class CANTelemetrySource:
         return self.state()
 
     async def _run(self) -> None:
-        """Read, decode, normalize, and publish CAN frames.
-
-        ``python-can`` exposes blocking bus reads, so each ``recv`` call runs in
-        a worker thread through ``asyncio.to_thread``. That keeps the FastAPI
-        event loop responsive for SSE, WebSocket, and HTTP control traffic while
-        the source waits for vehicle frames.
-        """
-
         try:
             database = await self._load_database()
             bus = await self._open_bus()
@@ -531,6 +408,7 @@ class CANTelemetrySource:
                         continue
                     self.latest_packet = packet
                     self.current_index += 1
+                    self.total_samples += 1
                     last_publish = now
                 await self.broadcaster.publish(packet)
         except asyncio.CancelledError:
@@ -543,12 +421,6 @@ class CANTelemetrySource:
             await self._shutdown_bus()
 
     async def _load_database(self) -> Any:
-        """Load the DBC file in a worker thread.
-
-        DBC parsing can touch disk and do non-trivial parsing work, so it is kept
-        off the event loop. The result is cached for the lifetime of this source.
-        """
-
         if self._database is not None:
             return self._database
 
@@ -561,13 +433,6 @@ class CANTelemetrySource:
         return self._database
 
     async def _open_bus(self) -> Any:
-        """Open the configured python-can bus in a worker thread.
-
-        Bus construction may open USB devices, sockets, vendor drivers, or
-        virtual channels depending on ``can_interface``. Keeping it in a thread
-        prevents hardware setup from blocking API startup work.
-        """
-
         if self._bus is not None:
             return self._bus
 
@@ -586,22 +451,12 @@ class CANTelemetrySource:
         return self._bus
 
     async def _shutdown_bus(self) -> None:
-        """Close the CAN bus if it has been opened."""
-
         bus = self._bus
         self._bus = None
         if bus is not None and hasattr(bus, "shutdown"):
             await asyncio.to_thread(bus.shutdown)
 
     def _packet_from_can_message(self, message: Any, decoded: dict[str, Any]) -> TelemetryPacket:
-        """Normalize one decoded CAN frame into the shared packet schema.
-
-        The normalized fields power common UI and coaching behavior. The raw
-        dict keeps the full decoded DBC payload plus frame metadata, which makes
-        debugging and vehicle-specific feature work possible without changing
-        the stream contract.
-        """
-
         sequence = self.current_index
         raw = {
             **decoded,
@@ -629,8 +484,6 @@ class CANTelemetrySource:
         )
 
     def _first_numeric(self, decoded: dict[str, Any], field: str) -> float | None:
-        """Return the first numeric decoded value matching a normalized field."""
-
         value = self._first_value(decoded, field)
         if isinstance(value, bool) or value is None:
             return None
@@ -640,19 +493,10 @@ class CANTelemetrySource:
             return None
 
     def _first_int(self, decoded: dict[str, Any], field: str) -> int | None:
-        """Return the first integer decoded value matching a normalized field."""
-
         value = self._first_numeric(decoded, field)
         return None if value is None else int(value)
 
     def _first_value(self, decoded: dict[str, Any], field: str) -> Any | None:
-        """Return the first decoded signal value matching a normalized field.
-
-        Different DBC files use different signal names for the same concept.
-        ``DEFAULT_SIGNAL_MAP`` captures common aliases so one server packet shape
-        can serve multiple vehicles and sensor boxes.
-        """
-
         for signal_name in self.DEFAULT_SIGNAL_MAP[field]:
             if signal_name in decoded:
                 return decoded[signal_name]

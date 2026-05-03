@@ -8,8 +8,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 from .schemas import TelemetryPacket
 
 logger = logging.getLogger(__name__)
@@ -35,15 +33,15 @@ _NORMALIZED_ALIASES = {
 }
 
 
-def parse_vbo_file(path: str | Path) -> tuple[list[TelemetryPacket], list[str], float | None]:
-    """Parse a Racelogic VBOX file into normalized telemetry packets.
+def parse_vbo_file(path: str | Path) -> tuple[list[str], list[str], float | None, float | None]:
+    """Parse a Racelogic VBOX file and extract the raw data lines.
 
     Args:
         path: Filesystem path to a ``.vbo`` text file.
 
     Returns:
-        Tuple containing normalized packets, source column names, and an
-        approximate duration in seconds when it can be calculated.
+        Tuple containing raw data lines, source column names, first timestamp,
+        and last timestamp in seconds.
 
     Raises:
         FileNotFoundError: If the path does not exist or is not a file.
@@ -73,118 +71,45 @@ def parse_vbo_file(path: str | Path) -> tuple[list[TelemetryPacket], list[str], 
     if not columns:
         raise VBOParseError("VBO [column names] section did not contain any columns")
 
-    rows: list[dict[str, Any]] = []
+    rows: list[str] = []
     for line in lines[data_index + 1 :]:
         stripped = line.strip()
         if stripped.startswith("["):
             break
         if not stripped:
             continue
-        values = _split_row(stripped)
-        if not values:
-            continue
-        if len(values) < len(columns):
-            values.extend([""] * (len(columns) - len(values)))
-        row = {column: _coerce_value(value) for column, value in zip(columns, values, strict=False)}
-        rows.append(row)
+        rows.append(stripped)
 
     if not rows:
         raise VBOParseError("VBO [data] section did not contain telemetry rows")
 
-    frame = pd.DataFrame(rows)
-    normalized = [_packet_from_row(index, row) for index, row in frame.iterrows()]
-    normalized.sort(key=lambda packet: (packet.timestamp, packet.sequence))
-    normalized = [packet.model_copy(update={"sequence": index}) for index, packet in enumerate(normalized)]
-    duration = _duration(normalized)
-    return normalized, list(frame.columns), duration
+    first_packet = parse_vbo_line(0, rows[0], columns)
+    last_packet = parse_vbo_line(len(rows) - 1, rows[-1], columns)
+
+    first_ts = first_packet.timestamp if first_packet else None
+    last_ts = last_packet.timestamp if last_packet else None
+
+    return rows, columns, first_ts, last_ts
 
 
-def _section_index(lines: list[str], section: str) -> int | None:
-    """Find the line index for a bracketed VBO section.
-
-    Args:
-        lines: All lines from the VBO file.
-        section: Section name without surrounding brackets.
-
-    Returns:
-        Zero-based line index when found, otherwise ``None``.
-    """
-
-    target = f"[{section}]"
-    for index, line in enumerate(lines):
-        if line.strip().lower() == target:
-            return index
-    return None
-
-
-def _next_non_empty(lines: list[str], start: int, stop: int) -> str | None:
-    """Find the first non-empty content line in a half-open line range.
+def parse_vbo_line(sequence: int, line: str, columns: list[str]) -> TelemetryPacket | None:
+    """Parse a single raw VBO data row into a TelemetryPacket.
 
     Args:
-        lines: All lines from the VBO file.
-        start: Inclusive start index.
-        stop: Exclusive stop index.
-
-    Returns:
-        Stripped line text, or ``None`` if no content line exists.
-    """
-
-    for line in lines[start:stop]:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("["):
-            return stripped
-    return None
-
-
-def _split_row(line: str) -> list[str]:
-    """Split a VBO column or data row into fields.
-
-    Args:
+        sequence: The sequence number for this row.
         line: Raw text row from the VBO file.
+        columns: The column definitions for the file.
 
     Returns:
-        List of non-empty field strings split on spaces, tabs, or commas.
+        A parsed TelemetryPacket or None if the row is empty.
     """
-
-    return [part for part in re.split(r"[\t, ]+", line.strip()) if part]
-
-
-def _coerce_value(value: str) -> Any:
-    """Convert a string field to a primitive value when possible.
-
-    Args:
-        value: Raw field string.
-
-    Returns:
-        ``None`` for empty or non-finite values, ``int`` for integer-like
-        numbers, ``float`` for decimal numbers, or the original string.
-    """
-
-    if value == "":
+    values = _split_row(line)
+    if not values:
         return None
-    try:
-        number = float(value)
-    except ValueError:
-        return value
-    if not math.isfinite(number):
-        return None
-    if number.is_integer():
-        return int(number)
-    return number
+    if len(values) < len(columns):
+        values.extend([""] * (len(columns) - len(values)))
 
-
-def _packet_from_row(sequence: int, row: pd.Series) -> TelemetryPacket:
-    """Build a normalized telemetry packet from a parsed DataFrame row.
-
-    Args:
-        sequence: Source row sequence before final timestamp sorting.
-        row: Pandas row containing parsed VBO field values.
-
-    Returns:
-        Normalized telemetry packet with raw values preserved.
-    """
-
-    raw = {str(key): _json_safe(value) for key, value in row.to_dict().items()}
+    raw = {column: _coerce_value(value) for column, value in zip(columns, values, strict=False)}
     normalized = _normalized_values(raw)
     timestamp = _timestamp_seconds(normalized.get("time"), sequence)
 
@@ -206,16 +131,46 @@ def _packet_from_row(sequence: int, row: pd.Series) -> TelemetryPacket:
     )
 
 
+def _section_index(lines: list[str], section: str) -> int | None:
+    """Find the line index for a bracketed VBO section."""
+    target = f"[{section}]"
+    for index, line in enumerate(lines):
+        if line.strip().lower() == target:
+            return index
+    return None
+
+
+def _next_non_empty(lines: list[str], start: int, stop: int) -> str | None:
+    """Find the first non-empty content line in a half-open line range."""
+    for line in lines[start:stop]:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("["):
+            return stripped
+    return None
+
+
+def _split_row(line: str) -> list[str]:
+    """Split a VBO column or data row into fields."""
+    return [part for part in re.split(r"[\t, ]+", line.strip()) if part]
+
+
+def _coerce_value(value: str) -> Any:
+    """Convert a string field to a primitive value when possible."""
+    if value == "":
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return value
+    if not math.isfinite(number):
+        return None
+    if number.is_integer():
+        return int(number)
+    return number
+
+
 def _normalized_values(raw: dict[str, Any]) -> dict[str, Any]:
-    """Map known VBO column aliases to canonical telemetry names.
-
-    Args:
-        raw: Parsed source row keyed by original VBO column name.
-
-    Returns:
-        Dictionary keyed by canonical telemetry field names.
-    """
-
+    """Map known VBO column aliases to canonical telemetry names."""
     values: dict[str, Any] = {}
     for key, value in raw.items():
         canonical = _canonical_name(key)
@@ -225,15 +180,7 @@ def _normalized_values(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _canonical_name(name: str) -> str | None:
-    """Return the canonical telemetry field name for a source column.
-
-    Args:
-        name: Original VBO column name.
-
-    Returns:
-        Canonical telemetry name when recognized, otherwise ``None``.
-    """
-
+    """Return the canonical telemetry field name for a source column."""
     normalized = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     compact = normalized.replace("_", "")
     for canonical, aliases in _NORMALIZED_ALIASES.items():
@@ -243,16 +190,7 @@ def _canonical_name(name: str) -> str | None:
 
 
 def _timestamp_seconds(value: Any, sequence: int) -> float:
-    """Normalize a timestamp value to seconds.
-
-    Args:
-        value: Raw timestamp value, usually seconds or VBOX HHMMSS.ss format.
-        sequence: Row sequence used for 10 Hz fallback timing.
-
-    Returns:
-        Timestamp in seconds.
-    """
-
+    """Normalize a timestamp value to seconds."""
     number = _optional_float(value)
     if number is None:
         return sequence * 0.1
@@ -268,16 +206,7 @@ def _timestamp_seconds(value: Any, sequence: int) -> float:
 
 
 def _coordinate(value: Any, *, is_longitude: bool) -> float | None:
-    """Normalize a latitude or longitude value to decimal degrees.
-
-    Args:
-        value: Raw coordinate value, either decimal degrees or DDMM.MMMM.
-        is_longitude: Whether the value should be validated as longitude.
-
-    Returns:
-        Decimal degrees, or ``None`` when the value is missing or invalid.
-    """
-
+    """Normalize a latitude or longitude value to decimal degrees."""
     number = _optional_float(value)
     if number is None:
         return None
@@ -291,15 +220,7 @@ def _coordinate(value: Any, *, is_longitude: bool) -> float | None:
 
 
 def _optional_float(value: Any) -> float | None:
-    """Convert a value to a finite float when possible.
-
-    Args:
-        value: Input value from a parsed VBO row.
-
-    Returns:
-        Finite float, or ``None`` for missing/non-numeric values.
-    """
-
+    """Convert a value to a finite float when possible."""
     if value is None or value == "":
         return None
     try:
@@ -310,47 +231,6 @@ def _optional_float(value: Any) -> float | None:
 
 
 def _optional_int(value: Any) -> int | None:
-    """Convert a value to an integer when possible.
-
-    Args:
-        value: Input value from a parsed VBO row.
-
-    Returns:
-        Integer value, or ``None`` for missing/non-numeric values.
-    """
-
+    """Convert a value to an integer when possible."""
     number = _optional_float(value)
     return None if number is None else int(number)
-
-
-def _json_safe(value: Any) -> Any:
-    """Convert pandas/numpy scalar values into JSON-safe primitives.
-
-    Args:
-        value: Value from a pandas DataFrame row.
-
-    Returns:
-        JSON-safe primitive value, or ``None`` for pandas missing values.
-    """
-
-    if pd.isna(value):
-        return None
-    if hasattr(value, "item"):
-        return value.item()
-    return value
-
-
-def _duration(samples: list[TelemetryPacket]) -> float | None:
-    """Calculate approximate replay duration from parsed samples.
-
-    Args:
-        samples: Timestamp-sorted telemetry packets.
-
-    Returns:
-        Non-negative duration in seconds, or ``None`` when fewer than two
-        samples exist.
-    """
-
-    if len(samples) < 2:
-        return None
-    return max(0.0, samples[-1].timestamp - samples[0].timestamp)

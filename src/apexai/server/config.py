@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -16,7 +16,7 @@ class ServerConfig:
 
     Attributes:
         source: Telemetry source kind.
-        vbo_file: Path to the Racelogic VBOX ``.vbo`` file to replay.
+        vbo_files: Paths to the Racelogic VBOX ``.vbo`` files to replay.
         dbc_file: Path to the CAN DBC used to decode raw frames.
         can_interface: python-can interface name, such as socketcan or slcan.
         can_channel: python-can channel, such as can0 or a USB serial device.
@@ -30,7 +30,7 @@ class ServerConfig:
     """
 
     source: TelemetrySourceKind = "vbo"
-    vbo_file: Path | None = None
+    vbo_files: list[Path] = field(default_factory=list)
     dbc_file: Path | None = None
     can_interface: str = "socketcan"
     can_channel: str = "can0"
