@@ -6,6 +6,18 @@ The system is designed to run entirely offline at the edge (in-car) to avoid clo
 
 ---
 
+## What Makes the ApexAI Implementation Unique
+### Brain-to-Edge Memory Transfer
+
+A key aspect of our implementation is the tight integration between the coaching dashboard, the driver, and the AI assistant through a structured memory bank workflow. The dashboard enables coaches and drivers to collaboratively build personalized memory banks based on previous driving sessions, telemetry data, racing scenarios, and coaching feedback.
+The memory entries can initially be generated using AI to accelerate the process, but they are designed to be reviewed, refined, and validated by the coach. This human-in-the-loop approach ensures that expert knowledge, driving strategy, and real-world racing experience remain central to the system rather than relying solely on automated generation.
+Once the coach and driver agree on the coaching guidance and racing strategies, the finalized memory bank is exported as a structured JSON file and imported into the mobile edge application. On-device, the in-phone AI assistant uses this memory bank as contextual knowledge to provide real-time predictive coaching, proactive recommendations, and direct driving commands during a session.
+This architecture also enables multiple coaches to create and manage their own independent memory banks, allowing different coaching styles, strategies, and expertise to be incorporated into the driver experience. We are currently planning to extend the platform to support loading and combining multiple memory banks simultaneously within a single mobile session, enabling the AI assistant to leverage knowledge from multiple coaches and racing scenarios dynamically.
+By running inference locally on the mobile device, the system can deliver low-latency assistance while maintaining a more deterministic and controllable behavior. This approach allows coaching expertise to be efficiently packaged into portable JSON-based memory banks and consistently delivered to the driver through the mobile application in real time.
+
+
+![ApexAI system architecture](images/apexai.png)
+
 ## 🏗️ System Architecture
 
 The ecosystem operates across three distinct architectural flows, separating offline pedagogical planning from real-time, in-car execution:
