@@ -78,6 +78,21 @@ uv run apexai-ui
 The UI defaults to `http://localhost:3000` and connects to the API at
 `http://localhost:8000`.
 
+## GitHub Pages Walkthrough
+
+The `docs/` folder contains a static walkthrough app for GitHub Pages. In the
+repository settings, set Pages to deploy from the default branch with the folder
+set to `/docs`.
+
+For local preview:
+
+```bash
+cd docs
+python3 -m http.server 4173
+```
+
+Then open `http://localhost:4173`.
+
 ## Telemetry Server
 
 For repeated local runs, configure `.env` and start through `make`.
