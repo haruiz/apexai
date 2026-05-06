@@ -81,8 +81,9 @@ The UI defaults to `http://localhost:3000` and connects to the API at
 ## GitHub Pages Walkthrough
 
 The `docs/` folder contains a static walkthrough app for GitHub Pages. In the
-repository settings, set Pages to deploy from the default branch with the folder
-set to `/docs`.
+repository settings, set Pages to deploy with **GitHub Actions**. The
+`.github/workflows/pages.yml` workflow uploads only `docs/`, so private or
+unavailable submodules are not cloned during the Pages deployment.
 
 For local preview:
 
