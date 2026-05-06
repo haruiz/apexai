@@ -8,44 +8,70 @@ The system is designed to run entirely offline at the edge (in-car) to avoid clo
 
 ## 🏗️ System Architecture
 
-The ecosystem consists of three primary components that form a complete feedback loop:
+The ecosystem operates across three distinct architectural flows, separating offline pedagogical planning from real-time, in-car execution:
 
-1. **ApexAI Simulation Server:** Ingests raw Racelogic `.vbo` telemetry files, normalizes the data, and broadcasts it.
-2. **Telemetry Dashboard:** A web interface to visualize telemetry, compare it against ideal racing lines, and build coaching "memories".
-3. **Mobile Edge App:** An Android application running in the car that receives the broadcasted telemetry, executes on-device LLM inference using Gemma 4:E2B, and triggers Text-to-Speech (TTS) commands.
+### 1. Offline Analysis & Memory Generation
+Before heading to the track, the driving coach or engineer uses pre-recorded telemetry to build a strategic plan ("memories") for the driver.
 
 ```mermaid
 graph TD
-    subgraph Data Source
+    subgraph Local Environment
         VBO[".vbo Telemetry Files"]
-        CAN["Live CAN Bus (via adapter)"]
     end
 
     subgraph Backend [ApexAI Server]
         Parser["Telemetry Parser (vbo_parser.py)"]
         Streamer["FastAPI Broadcaster"]
         VBO --> Parser
-        CAN --> Parser
         Parser --> Streamer
     end
 
     subgraph WebUI [Dashboard Web UI]
-        Next["Next.js Application"]
         Rust["Rust Static Data Engine"]
+        Next["Next.js Application"]
         Memories["Coaching Memories Builder"]
-        Streamer -- "SSE / WebSockets" --> Next
+        
+        Streamer -- "SSE Stream" --> Next
         Rust -- "Ideal Racing Line (JSON)" --> Next
         Next --> Memories
+        Memories -- "Export" --> JSON["memories.json"]
+    end
+```
+
+### 2. Loading Memories to the Android App
+The generated `memories.json` encapsulates the hyper-specific coaching heuristics (e.g., "brake 50m earlier at Turn 3"). This file is side-loaded onto the driver's Android device, securely bridging the offline analysis with the offline execution environment.
+
+```mermaid
+graph LR
+    JSON["memories.json (from Dashboard)"]
+    ADB["USB / ADB Push"]
+    Storage["Android Local Storage (/data/local/tmp/)"]
+    
+    JSON --> ADB
+    ADB --> Storage
+```
+
+### 3. Realtime Coaching (Production Environment)
+During the actual track session, the system operates **entirely offline** within the vehicle. Telemetry flows directly from the car's hardware to the Android device, utilizing the pre-loaded memories to generate predictive coaching audio.
+
+```mermaid
+graph TD
+    subgraph Racing Vehicle
+        CAN["Car CAN Bus / OBD-II"]
+        Adapter["CAN-to-USB/WiFi Adapter"]
+        CAN --> Adapter
     end
 
     subgraph MobileApp [Android Edge App]
-        App["Kotlin / Jetpack Compose UI"]
+        Ingest["Telemetry Ingestion Service"]
+        MemoryBank["Memory Bank (memories.json)"]
         Gate["Gated Inference Engine"]
         LLM["LiteRT-LM (Gemma 4:E2B)"]
         TTS["Android TTS (Audio Delivery)"]
         
-        Streamer -- "WebSockets" --> App
-        App --> Gate
+        Adapter -- "Raw Telemetry Stream" --> Ingest
+        Ingest --> Gate
+        MemoryBank --> LLM
         Gate -- "Straightaway Detected" --> LLM
         LLM -- "JSON Command" --> TTS
     end
