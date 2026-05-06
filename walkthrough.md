@@ -19,7 +19,7 @@ graph TD
         VBO[".vbo Telemetry Files"]
     end
 
-    subgraph Backend [ApexAI Server]
+    subgraph Backend [ApexAI Server / Car Simulator]
         Parser["Telemetry Parser (vbo_parser.py)"]
         Streamer["FastAPI Broadcaster"]
         VBO --> Parser
@@ -39,7 +39,7 @@ graph TD
 ```
 
 ### 2. Loading Memories to the Android App
-The generated `memories.json` encapsulates the hyper-specific coaching heuristics (e.g., "brake 50m earlier at Turn 3"). This file is side-loaded onto the driver's Android device, securely bridging the offline analysis with the offline execution environment.
+The generated `memories.json` encapsulates the hyper-specific coaching heuristics (e.g., "brake 50m earlier at Turn 3"). Currently, this file is side-loaded onto the driver's Android device, securely bridging the offline analysis with the offline execution environment.
 
 ```mermaid
 graph LR
@@ -166,3 +166,7 @@ The ecosystem is engineered for seamless cloud deployment to complement the offl
 - **Containerization:** The `apexai` backend is packaged inside a Docker image that leverages `uv sync --frozen` for deterministic, lightweight dependency resolution.
 - **Cloud Run Orchestration:** Both the backend simulation server and the static Next.js dashboard are deployed via `Makefile` recipes directly to **Google Cloud Run**, automatically injecting cloud-assigned `PORT` configurations for seamless routing.
 - **Unified Repository:** While organized into `ui/`, `mobile/`, and server modules, the repository relies on root-level `.gitignore` rules and strict separation of concerns, maintaining a clean CI/CD pipeline.
+
+## 🚀 Future Improvements
+
+- **Cloud Memory Synchronization:** Currently, the `memories.json` files are side-loaded directly to the Android device via ADB. A key future improvement is to synchronize these coaching heuristics over **Firebase**. The Dashboard will push generated memories directly to a Firebase bucket, and the Android App will pull these updates dynamically upon startup, entirely eliminating the need for wired ADB side-loading before track sessions.
