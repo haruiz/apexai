@@ -31,12 +31,12 @@ without depending on a cloud service.
   WebSocket and SSE endpoints.
 - [x] Build a simulator frontend that visualizes telemetry in real time according
   to the configured streaming frequency.
-- [ ] Build a mobile application that receives streamed telemetry data and runs
+- [x] Build a mobile application that receives streamed telemetry data and runs
   on-device inference to generate coaching instructions. Sebastian already has
   related work started here.
 - [ ] Develop an RL pipeline to fine-tune a Gemma model for racing coaching
   commands.
-- [ ] Integrate a memory bank where telemetry data can be queued and used for
+- [x] Integrate a memory bank where telemetry data can be queued and used for
   lookahead prediction, so the coaching pipeline can anticipate upcoming driver
   needs. Vikram already has related work started here.
 
