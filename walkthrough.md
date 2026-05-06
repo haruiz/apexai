@@ -21,7 +21,7 @@ graph TD
         CAN["Live CAN Bus (via adapter)"]
     end
 
-    subgraph ApexAI Server (Backend)
+    subgraph Backend [ApexAI Server]
         Parser["Telemetry Parser (vbo_parser.py)"]
         Streamer["FastAPI Broadcaster"]
         VBO --> Parser
@@ -29,7 +29,7 @@ graph TD
         Parser --> Streamer
     end
 
-    subgraph Dashboard (Web UI)
+    subgraph WebUI [Dashboard Web UI]
         Next["Next.js Application"]
         Rust["Rust Static Data Engine"]
         Memories["Coaching Memories Builder"]
@@ -38,7 +38,7 @@ graph TD
         Next --> Memories
     end
 
-    subgraph Android Edge App (Mobile)
+    subgraph MobileApp [Android Edge App]
         App["Kotlin / Jetpack Compose UI"]
         Gate["Gated Inference Engine"]
         LLM["LiteRT-LM (Gemma 4:E2B)"]
