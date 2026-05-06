@@ -53,6 +53,35 @@ graph TD
 
 ---
 
+## 🛠️ Technology Stack & Unique Innovations
+
+The project synthesizes bleeding-edge technologies across Python, Rust, TypeScript, and Kotlin. Here are the core stacks and unique engineering solutions used:
+
+### Backend (ApexAI Server)
+- **Tech Stack:** Python 3.11, FastAPI, Uvicorn, `python-can`, `cantools`.
+- **Unique Innovations:**
+  - **Dual-Protocol Broadcasting:** Seamlessly transmits live telemetry across both **Server-Sent Events (SSE)** (for stateless web UIs) and **WebSockets** (for low-latency mobile edge apps) concurrently.
+  - **Live CAN & Legacy VBOX Support:** Fuses live CAN bus ingestion (via `cantools` and DBC signal mapping) and legacy Racelogic `.vbo` text file replay into a single, unified `TelemetryPacket` schema.
+
+### Data Engineering (Static Asset Engine)
+- **Tech Stack:** Rust (`serde`, `serde_json`).
+- **Unique Innovations:**
+  - **Rust VBO-to-JSON Pipeline:** A custom `data-engine` written in Rust aggressively parses massive `.vbo` datasets into heavily optimized, lightweight JSON structures. This entirely eliminates dynamic backend loads when plotting the Ideal Racing Line, making the UI deployable as a high-speed static asset.
+
+### Web Dashboard (Coaching UI)
+- **Tech Stack:** TypeScript, React, Next.js.
+- **Unique Innovations:**
+  - **10Hz Spatial Matching:** Executes high-frequency mathematical distance calculations (Haversine formula) purely on the client-side to instantly detect where the car is relative to the pre-computed track sectors.
+  - **Dynamic Environment Binding:** Intelligently switches telemetry source bindings based on `window.location.hostname`, seamlessly shifting from local `127.0.0.1` dev environments to deployed Google Cloud Run containers without `.env` management.
+
+### Mobile Edge App (In-Car Coach)
+- **Tech Stack:** Native Android Kotlin, Jetpack Compose, Google LiteRT-LM, OkHttp.
+- **Unique Innovations:**
+  - **Thermal-Aware Gated Inference:** The app mathematically monitors steering variance to detect cornering phases. It suppresses all LLM computation mid-corner, only unlocking the Gemma 4:E2B model on stable straightaways to prevent thermal CPU throttling in hot racing cabins.
+  - **Strict JSON LLM Prompting:** The `Gemma4Manager` enforces hard metric generation instead of conversational chat, extracting distinct scalar values (e.g., "0.05 bar throttle") to construct authoritative Text-to-Speech instructions.
+
+---
+
 ## 🏎️ Component 1: ApexAI Telemetry Simulation Server
 
 **Role:** The foundational backend responsible for interpreting raw vehicle data and streaming it to downstream clients via high-throughput HTTP streams.
