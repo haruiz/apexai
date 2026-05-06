@@ -1,3 +1,6 @@
 [submodule "mobile"]
 	path = mobile
 	url = git@github.com:seagomezar/sonoma-racing-coach.git
+[submodule "dashboard"]
+	path = dashboard
+	url = https://github.com/VikramTiwari/ideal-racing-ling.git

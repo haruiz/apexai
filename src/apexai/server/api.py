@@ -51,6 +51,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
             "http://localhost:5173",
             "http://127.0.0.1:3000",
             "http://127.0.0.1:5173",
+            "https://dashboard-812524149286.us-central1.run.app",
         ],
         allow_credentials=True,
         allow_methods=["*"],
@@ -61,7 +62,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
     async def _startup() -> None:
         """Start replay during application startup when configured."""
 
-        logger.info("server started with source=%s samples=%s", config.source, len(source.samples))
+        logger.info("server started with samples=%s", source.total_samples)
         if config.autostart:
             await source.play()
 
@@ -70,7 +71,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
         """Return a lightweight server health payload."""
 
         state = source.state()
-        return {"status": "ok", "source": state.source, "samples": len(source.samples), "replay": state.status}
+        return {"status": "ok", "source": "vbo", "samples": source.total_samples, "replay": state.status}
 
     @app.get("/state", response_model=ReplayState)
     async def state() -> ReplayState:
@@ -160,18 +161,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
     @app.get("/telemetry/trace", response_model=list[TelemetryTracePoint])
     async def telemetry_trace() -> list[TelemetryTracePoint]:
         """Return all GPS samples needed to preload the full race trace."""
-
-        return [
-            TelemetryTracePoint(
-                sequence=packet.sequence,
-                timestamp=packet.timestamp,
-                latitude=packet.latitude,
-                longitude=packet.longitude,
-                heading=packet.heading,
-            )
-            for packet in source.samples
-            if packet.latitude is not None and packet.longitude is not None
-        ]
+        return source.trace()
 
     @app.websocket("/ws/telemetry")
     async def telemetry_websocket(websocket: WebSocket) -> None:

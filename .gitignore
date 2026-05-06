@@ -10,6 +10,7 @@ wheels/
 ui/.next/
 ui/out/
 ui/node_modules/
+src/apexai/ui/static/
 
 # Virtual environments
 .venv

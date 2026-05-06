@@ -125,7 +125,8 @@ export default function Home() {
   useEffect(() => {
     const origin = window.location.origin;
     const isNextDev = window.location.port === "3000";
-    setApiUrl(process.env.NEXT_PUBLIC_APEXAI_API_URL ?? (isNextDev ? DEFAULT_API_URL : origin));
+    const base = process.env.NEXT_PUBLIC_APEXAI_API_URL ?? (isNextDev ? DEFAULT_API_URL : origin);
+    setApiUrl(`${base}/events/telemetry`);
   }, [setApiUrl]);
 
   useEffect(() => {
@@ -162,24 +163,25 @@ export default function Home() {
         return;
       }
       setConnection("connecting");
-      const socket = new WebSocket(toWebSocketUrl(endpoint, "/ws/telemetry"));
+      const source = new EventSource(`${endpoint}/events/telemetry`);
 
-      socket.onopen = () => setConnection("live");
-      socket.onmessage = (event) => {
+      source.onopen = () => setConnection("live");
+      source.addEventListener("telemetry", (event) => {
         if (!useTelemetryStore.getState().telemetryActive) {
           return;
         }
         const packet = JSON.parse(event.data) as TelemetryPacket;
         pushPacket(packet);
-      };
-      socket.onclose = () => {
+      });
+      source.onerror = () => {
         if (closed) {
+          source.close();
           return;
         }
         setConnection("offline");
+        source.close();
         reconnectRef.current = window.setTimeout(connect, 1500);
       };
-      socket.onerror = () => socket.close();
     }
 
     connect();
@@ -276,8 +278,8 @@ export default function Home() {
           </Box>
           <Stack direction={{ xs: "column", sm: "row" }} alignItems={{ xs: "stretch", sm: "center" }} spacing={1.5}>
             <TextField
-              label="Server"
-              placeholder={DEFAULT_API_URL}
+              label="SSE Endpoint"
+              placeholder={`${DEFAULT_API_URL}/events/telemetry`}
               value={apiUrl}
               onChange={(event: ChangeEvent<HTMLInputElement>) => setApiUrl(event.target.value)}
               sx={{ width: { xs: "100%", sm: 430 } }}
@@ -640,13 +642,11 @@ async function postJson<T>(url: string, body?: unknown) {
 }
 
 function normalizeEndpoint(value: string) {
-  return value.trim().replace(/\/$/, "");
-}
-
-function toWebSocketUrl(origin: string, path: string) {
-  const url = new URL(path, origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  return url.toString();
+  let cleaned = value.trim().replace(/\/$/, "");
+  if (cleaned.endsWith("/events/telemetry")) {
+    cleaned = cleaned.slice(0, -"/events/telemetry".length);
+  }
+  return cleaned;
 }
 
 function buildTrack(samples: Array<TelemetryPacket | TraceSample>, fixedOrigin?: TrackPoint | null): TrackPoint[] {
