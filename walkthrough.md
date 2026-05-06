@@ -178,12 +178,12 @@ graph TD
         T3["Tier 3: Driver Annotations"]
     end
 
-    subgraph Activation Gate (GatedInferenceEngine)
+    subgraph ActivationGate [Activation Gate / GatedInferenceEngine]
         Wait["Mid-Corner (Blocked)"]
         Trigger["Corner Exit / Straightaway (Active)"]
     end
 
-    subgraph LLM & Delivery
+    subgraph LLMDelivery [LLM & Delivery]
         Context["Prompt Context Builder"]
         LLM["Gemma 4:E2B Inference"]
         Queue["Predictive Audio Queue"]
