@@ -31,8 +31,7 @@ help:
 	@echo "  AUTOSTART=$(AUTOSTART)"
 	@echo ""
 	@echo "Example:"
-	@echo "  make start SOURCE=vbo VBO_FILE=./data/session.vbo STREAM_INTERVAL=5 LOOP=--loop"
-	@echo "  make start SOURCE=can DBC_FILE=./data/vehicle.dbc CAN_INTERFACE=socketcan CAN_CHANNEL=vcan0"
+	@echo "  make start STREAM_INTERVAL=5 LOOP=--loop"
 
 sync:
 	@echo "Pulling apexai..."
@@ -74,7 +73,7 @@ run-all:
 	@echo "Starting servers..."
 	@lsof -ti :8000 -ti :3000 -ti :8761 -ti :8762 -ti :8763 | xargs kill -9 2>/dev/null || true
 	@trap 'echo "\nStopping servers..."; kill %1 %2 %3 2>/dev/null || true; exit 0' SIGINT SIGTERM EXIT; \
-	uv run apexai-server --source vbo --vbo-file ./data/*.vbo --autostart --loop & \
+	uv run apexai-server --autostart --loop & \
 	uv run apexai-ui & \
 	(cd dashboard/client && npm run dev) & \
 	sleep 3; \
@@ -90,12 +89,6 @@ start:
 	@trap 'kill %1 2>/dev/null || true' SIGINT SIGTERM EXIT; \
 	if [ -d "dashboard/client" ]; then (cd dashboard/client && npm run dev &); fi; \
 	uv run apexai-server \
-		--source "$(or $(SOURCE),vbo)" \
-		$(if $(VBO_FILE),--vbo-file "$(VBO_FILE)",--vbo-file ./data/*.vbo) \
-		$(if $(DBC_FILE),--dbc-file "$(DBC_FILE)",) \
-		--can-interface "$(or $(CAN_INTERFACE),socketcan)" \
-		--can-channel "$(or $(CAN_CHANNEL),can0)" \
-		$(if $(CAN_BITRATE),--can-bitrate "$(CAN_BITRATE)",) \
 		$(if $(HOST),--host "$(HOST)",) \
 		$(if $(PORT),--port "$(PORT)",) \
 		$(if $(REPLAY_SPEED),--replay-speed "$(REPLAY_SPEED)",) \

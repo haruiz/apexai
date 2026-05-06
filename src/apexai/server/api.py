@@ -62,7 +62,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
     async def _startup() -> None:
         """Start replay during application startup when configured."""
 
-        logger.info("server started with source=%s samples=%s", config.source, source.total_samples)
+        logger.info("server started with samples=%s", source.total_samples)
         if config.autostart:
             await source.play()
 
@@ -71,7 +71,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
         """Return a lightweight server health payload."""
 
         state = source.state()
-        return {"status": "ok", "source": state.source, "samples": source.total_samples, "replay": state.status}
+        return {"status": "ok", "source": "vbo", "samples": source.total_samples, "replay": state.status}
 
     @app.get("/state", response_model=ReplayState)
     async def state() -> ReplayState:

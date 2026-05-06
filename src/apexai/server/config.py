@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
-
-
-TelemetrySourceKind = Literal["vbo", "can"]
 
 
 @dataclass(frozen=True)
@@ -15,12 +11,7 @@ class ServerConfig:
     """Runtime configuration created from command-line arguments.
 
     Attributes:
-        source: Telemetry source kind.
-        vbo_files: Paths to the Racelogic VBOX ``.vbo`` files to replay.
-        dbc_file: Path to the CAN DBC used to decode raw frames.
-        can_interface: python-can interface name, such as socketcan or slcan.
-        can_channel: python-can channel, such as can0 or a USB serial device.
-        can_bitrate: Optional CAN bus bitrate.
+        data_dir: Path to the directory containing Racelogic VBOX ``.vbo`` files to replay.
         host: Network interface uvicorn should bind to.
         port: TCP port uvicorn should listen on.
         replay_speed: Multiplier applied to original telemetry sample intervals.
@@ -29,12 +20,7 @@ class ServerConfig:
         autostart: Whether replay should begin during FastAPI startup.
     """
 
-    source: TelemetrySourceKind = "vbo"
-    vbo_files: list[Path] = field(default_factory=list)
-    dbc_file: Path | None = None
-    can_interface: str = "socketcan"
-    can_channel: str = "can0"
-    can_bitrate: int | None = None
+    data_dir: Path = Path("data")
     host: str = "0.0.0.0"
     port: int = 8000
     replay_speed: float = 1.0

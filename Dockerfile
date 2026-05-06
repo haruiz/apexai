@@ -28,5 +28,5 @@ COPY --from=ui-builder /app/src/apexai/ui/static ./src/apexai/ui/static
 ENV PORT=8080
 EXPOSE ${PORT}
 
-# Run the server using bash to properly expand the glob for *.vbo files
-CMD ["bash", "-c", "/app/.venv/bin/apexai-server --source vbo --vbo-file ./data/*.vbo --autostart --loop --port ${PORT}"]
+# Run the server using bash
+CMD ["bash", "-c", "/app/.venv/bin/apexai-server --autostart --loop --port ${PORT}"]

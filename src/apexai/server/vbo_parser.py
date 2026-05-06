@@ -213,10 +213,17 @@ def _coordinate(value: Any, *, is_longitude: bool) -> float | None:
     limit = 180 if is_longitude else 90
     if abs(number) <= limit:
         return number
-    degrees = int(abs(number) // 100)
-    minutes = abs(number) - degrees * 100
-    decimal = degrees + minutes / 60
-    return -decimal if number < 0 else decimal
+        
+    # The dataset coordinates are stored purely in minutes (e.g. 2289.715548).
+    decimal = abs(number) / 60.0
+    
+    if is_longitude:
+        # VBOX standard: Positive is West, Negative is East
+        # Standard GPS: Positive is East, Negative is West
+        return -decimal if number > 0 else decimal
+    else:
+        # VBOX standard: Positive is North, Negative is South
+        return -decimal if number < 0 else decimal
 
 
 def _optional_float(value: Any) -> float | None:
