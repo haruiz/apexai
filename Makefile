@@ -110,6 +110,6 @@ deploy-apex:
 
 deploy-dashboard:
 	@if [ -d "dashboard/scripts" ]; then cd dashboard && ./scripts/build_static_data.sh; fi
-	gcloud run deploy dashboard --source dashboard --project the-need-for-speed --region us-central1 --allow-unauthenticated
+	gcloud run deploy dashboard --source dashboard --project the-need-for-speed --region us-central1 --allow-unauthenticated --service-account="dashboard-sa@the-need-for-speed.iam.gserviceaccount.com"
 
 deploy-all: deploy-apex deploy-dashboard
