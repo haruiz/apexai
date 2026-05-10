@@ -35,7 +35,7 @@ help:
 
 sync:
 	@echo "Pulling apexai..."
-	git pull || echo "Warning: Could not pull apexai. Continuing..."
+	@git pull || echo "Warning: Could not pull apexai. Continuing..."
 	@if [ -e "mobile/.git" ]; then \
 		echo "Pulling mobile..."; cd mobile && git pull || echo "Warning: Could not pull mobile."; \
 	else \
