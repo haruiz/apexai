@@ -71,13 +71,15 @@ setup: sync deps build
 
 run-all:
 	@echo "Starting servers..."
-	@lsof -ti :8000 -ti :3000 -ti :8761 -ti :8762 -ti :8763 | xargs kill -9 2>/dev/null || true
-	@trap 'echo "\nStopping servers..."; kill %1 %2 2>/dev/null || true; exit 0' SIGINT SIGTERM EXIT; \
+	@lsof -ti :8000 -ti :3000 -ti :3001 -ti :8761 -ti :8762 -ti :8763 | xargs kill -9 2>/dev/null || true
+	@trap 'echo "\nStopping servers..."; kill %1 %2 %3 2>/dev/null || true; exit 0' SIGINT SIGTERM EXIT; \
 	uv run apexai-server --autostart --loop & \
-	uv run apexai-ui & \
+	uv run apexai-ui --port 3001 & \
+	npm --prefix dashboard run dev & \
 	sleep 3; \
 	if command -v open >/dev/null 2>&1; then \
-		open http://127.0.0.1:3000; \
+		open http://127.0.0.1:3001; \
+		open http://127.0.0.1:8761; \
 		open http://127.0.0.1:8000/state; \
 	fi; \
 	wait
