@@ -57,7 +57,6 @@ const DEFAULT_STATE: ReplayState = {
   vbo_file: ""
 };
 const DEFAULT_API_URL = "http://localhost:8000";
-const RAY_SPACING_METERS = 8;
 const iconButtonSx = {
   width: "100%",
   minHeight: 44,
@@ -82,7 +81,6 @@ export default function Home() {
     history,
     frequencyHz,
     replaySpeed,
-    rayPointCount,
     vehicleIconUrl,
     timingDirty,
     setApiUrl,
@@ -90,7 +88,6 @@ export default function Home() {
     setTelemetryActive,
     setFrequencyHz,
     setReplaySpeed,
-    setRayPointCount,
     setVehicleIconUrl,
     syncTiming,
     acceptTiming,
@@ -200,9 +197,8 @@ export default function Home() {
   const drivenTrack = useMemo(() => buildTrack(history, traceOrigin), [history, traceOrigin]);
   const projectionOrigin = traceOrigin ?? drivenTrack[0] ?? null;
   const currentPoint = useMemo(() => projectPacketFromOrigin(latest, projectionOrigin), [latest, projectionOrigin]);
-  const orientation = useMemo(() => computeOrientation(history), [history]);
-  const rayPoints = useMemo(() => buildRayPoints(currentPoint, orientation, Number(rayPointCount)), [currentPoint, orientation, rayPointCount]);
-  const bounds = useMemo(() => trackBounds([...(track.length > 0 ? track : drivenTrack), ...rayPoints]), [track, drivenTrack, rayPoints]);
+  const orientation = useMemo(() => computeOrientation(latest), [latest]);
+  const bounds = useMemo(() => trackBounds(track.length > 0 ? track : drivenTrack), [track, drivenTrack]);
   const progress = state.total_samples > 0 ? Math.min(100, (state.current_index / state.total_samples) * 100) : 0;
 
   async function control(path: string, body?: unknown) {
@@ -314,7 +310,6 @@ export default function Home() {
                 <TrackMap
                   track={track}
                   drivenTrack={drivenTrack}
-                  rayPoints={rayPoints}
                   bounds={bounds}
                   currentPoint={currentPoint}
                   orientation={orientation}
@@ -336,9 +331,6 @@ export default function Home() {
                   </Grid>
                   <Grid item xs={6} sm={4} md>
                     <Metric label="Heading" value={`${formatNumber(latest?.heading, 1)} deg`} />
-                  </Grid>
-                  <Grid item xs={6} sm={4} md>
-                    <Metric label="Ray length" value={`${formatNumber(rayPoints.length * RAY_SPACING_METERS, 0)} m`} />
                   </Grid>
                 </Grid>
               </CardContent>
@@ -415,7 +407,7 @@ export default function Home() {
                           InputProps={{ endAdornment: <InputAdornment position="end">Hz</InputAdornment> }}
                         />
                       </Grid>
-                      <Grid item xs={3}>
+                      <Grid item xs={5}>
                         <TextField
                           fullWidth
                           label="Speed"
@@ -425,17 +417,6 @@ export default function Home() {
                           onChange={(event: ChangeEvent<HTMLInputElement>) => setReplaySpeed(event.target.value)}
                           inputProps={{ min: 0.01, step: 0.01 }}
                           InputProps={{ endAdornment: <InputAdornment position="end">x</InputAdornment> }}
-                        />
-                      </Grid>
-                      <Grid item xs={3}>
-                        <TextField
-                          fullWidth
-                          label="Ray points"
-                          inputMode="numeric"
-                          type="number"
-                          value={rayPointCount}
-                          onChange={(event: ChangeEvent<HTMLInputElement>) => setRayPointCount(event.target.value)}
-                          inputProps={{ min: 0, max: 60, step: 1 }}
                         />
                       </Grid>
                       <Grid item xs={2}>
@@ -515,7 +496,6 @@ export default function Home() {
 function TrackMap({
   track,
   drivenTrack,
-  rayPoints,
   bounds,
   currentPoint,
   orientation,
@@ -523,7 +503,6 @@ function TrackMap({
 }: {
   track: TrackPoint[];
   drivenTrack: TrackPoint[];
-  rayPoints: TrackPoint[];
   bounds: ReturnType<typeof trackBounds>;
   currentPoint: TrackPoint | null;
   orientation: number | null;
@@ -531,7 +510,6 @@ function TrackMap({
 }) {
   const points = track.map((point) => projectPoint(point, bounds)).join(" ");
   const drivenPoints = drivenTrack.map((point) => projectPoint(point, bounds)).join(" ");
-  const rayPolyline = rayPoints.map((point) => projectPoint(point, bounds)).join(" ");
   const current = currentPoint ? projectPoint(currentPoint, bounds).split(",").map(Number) : null;
 
   return (
@@ -540,9 +518,6 @@ function TrackMap({
         <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
           <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(255, 255, 255, 0.07)" strokeWidth="1" />
         </pattern>
-        <marker id="rayArrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M 1 1 L 11 6 L 1 11 Z" fill="#ff1f3d" />
-        </marker>
         <filter id="vehicleShadow" x="-50%" y="-50%" width="200%" height="200%">
           <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.62" />
           <feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#ff1f3d" floodOpacity="0.3" />
@@ -553,24 +528,6 @@ function TrackMap({
       {points ? <polyline points={points} fill="none" stroke="#3a3d43" opacity="0.82" strokeLinecap="round" strokeLinejoin="round" strokeWidth="12" /> : null}
       {points ? <polyline points={points} fill="none" stroke="#d9d9d9" opacity="0.92" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" /> : null}
       {drivenPoints ? <polyline points={drivenPoints} fill="none" stroke="#ff1f3d" strokeLinecap="round" strokeLinejoin="round" strokeWidth="5" /> : null}
-      {current && rayPolyline ? (
-        <g>
-          <polyline
-            points={`${current[0]},${current[1]} ${rayPolyline}`}
-            fill="none"
-            stroke="#ff4d64"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            opacity="0.86"
-            markerEnd="url(#rayArrow)"
-          />
-          {rayPoints.map((point, index) => {
-            const [x, y] = projectPoint(point, bounds).split(",").map(Number);
-            return <circle key={`${point.sequence}-${index}`} cx={x} cy={y} r="2.2" fill="#ff4d64" opacity={0.72 - index * 0.006} />;
-          })}
-        </g>
-      ) : null}
       {current ? (
         <VehicleMarker x={current[0]} y={current[1]} orientation={orientation ?? 0} iconUrl={vehicleIconUrl} />
       ) : (
@@ -683,29 +640,6 @@ function projectPacketFromOrigin(packet: TelemetryPacket | null, origin: TrackPo
   };
 }
 
-function buildRayPoints(currentPoint: TrackPoint | null, orientation: number | null, requestedCount: number): TrackPoint[] {
-  if (!currentPoint || orientation === null || !Number.isFinite(requestedCount)) {
-    return [];
-  }
-  const count = Math.max(0, Math.min(60, Math.round(requestedCount)));
-  const radians = toRadians(orientation);
-  const eastStep = Math.sin(radians) * RAY_SPACING_METERS;
-  const northStep = Math.cos(radians) * RAY_SPACING_METERS;
-
-  return Array.from({ length: count }, (_, index) => {
-    const distanceMultiplier = index + 1;
-    return {
-      sequence: currentPoint.sequence + distanceMultiplier,
-      timestamp: currentPoint.timestamp,
-      latitude: currentPoint.latitude,
-      longitude: currentPoint.longitude,
-      heading: currentPoint.heading,
-      xMeters: currentPoint.xMeters + eastStep * distanceMultiplier,
-      yMeters: currentPoint.yMeters + northStep * distanceMultiplier
-    };
-  });
-}
-
 function hasGps(packet: TelemetryPacket | TraceSample): packet is TraceSample {
   return packet.latitude !== null && packet.longitude !== null;
 }
@@ -719,45 +653,8 @@ function metersFromOrigin(originLat: number, originLon: number, lat: number, lon
   };
 }
 
-function computeOrientation(history: TelemetryPacket[]) {
-  const latest = history[history.length - 1];
-  if (!latest) {
-    return null;
-  }
-  const gps = history.filter((packet) => packet.latitude !== null && packet.longitude !== null);
-  const movementBearing = bearingFromRecentMovement(gps);
-  if (movementBearing !== null) {
-    return movementBearing;
-  }
-  if (latest.heading !== null) {
-    return normalizeAngle(latest.heading);
-  }
-  return null;
-}
-
-function bearingFromRecentMovement(gps: TelemetryPacket[]) {
-  if (gps.length < 2) {
-    return null;
-  }
-  const current = gps[gps.length - 1];
-  for (let index = gps.length - 2; index >= 0; index -= 1) {
-    const previous = gps[index];
-    const delta = metersFromOrigin(previous.latitude!, previous.longitude!, current.latitude!, current.longitude!);
-    const distance = Math.hypot(delta.xMeters, delta.yMeters);
-    if (distance >= 1.5) {
-      return bearing(previous.latitude!, previous.longitude!, current.latitude!, current.longitude!);
-    }
-  }
-  return null;
-}
-
-function bearing(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const phi1 = toRadians(lat1);
-  const phi2 = toRadians(lat2);
-  const delta = toRadians(lon2 - lon1);
-  const y = Math.sin(delta) * Math.cos(phi2);
-  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(delta);
-  return normalizeAngle(toDegrees(Math.atan2(y, x)));
+function computeOrientation(packet: TelemetryPacket | null) {
+  return packet?.heading !== null && packet?.heading !== undefined ? normalizeAngle(packet.heading) : null;
 }
 
 function trackBounds(track: TrackPoint[]) {
@@ -811,8 +708,4 @@ function normalizeAngle(angle: number) {
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
-}
-
-function toDegrees(value: number) {
-  return (value * 180) / Math.PI;
 }
