@@ -36,12 +36,12 @@ help:
 sync:
 	@echo "Pulling apexai..."
 	git pull || echo "Warning: Could not pull apexai. Continuing..."
-	@if [ -d "mobile/.git" ]; then \
+	@if [ -e "mobile/.git" ]; then \
 		echo "Pulling mobile..."; cd mobile && git pull || echo "Warning: Could not pull mobile."; \
 	else \
 		echo "Mobile directory does not have a git repository. Skipping git pull for mobile."; \
 	fi
-	@if [ -d "dashboard/.git" ]; then \
+	@if [ -e "dashboard/.git" ]; then \
 		echo "Pulling dashboard..."; cd dashboard && git pull || echo "Warning: Could not pull dashboard."; \
 	else \
 		echo "dashboard directory does not have a git repository. Skipping git pull for dashboard."; \
