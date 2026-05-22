@@ -39,7 +39,6 @@ type TelemetryStore = {
   telemetryActive: boolean;
   frequencyHz: string;
   replaySpeed: string;
-  rayPointCount: string;
   vehicleIconUrl: string;
   timingDirty: boolean;
   setApiUrl: (apiUrl: string) => void;
@@ -47,7 +46,6 @@ type TelemetryStore = {
   setTelemetryActive: (telemetryActive: boolean) => void;
   setFrequencyHz: (frequencyHz: string) => void;
   setReplaySpeed: (replaySpeed: string) => void;
-  setRayPointCount: (rayPointCount: string) => void;
   setVehicleIconUrl: (vehicleIconUrl: string) => void;
   syncTiming: (streamInterval: number | null, replaySpeed: number) => void;
   acceptTiming: (streamInterval: number | null, replaySpeed: number) => void;
@@ -65,7 +63,6 @@ export const useTelemetryStore = create<TelemetryStore>((set) => ({
   telemetryActive: false,
   frequencyHz: "10",
   replaySpeed: "1",
-  rayPointCount: "12",
   vehicleIconUrl: "",
   timingDirty: false,
   setApiUrl: (apiUrl) => set({ apiUrl }),
@@ -73,7 +70,6 @@ export const useTelemetryStore = create<TelemetryStore>((set) => ({
   setTelemetryActive: (telemetryActive) => set({ telemetryActive }),
   setFrequencyHz: (frequencyHz) => set({ frequencyHz, timingDirty: true }),
   setReplaySpeed: (replaySpeed) => set({ replaySpeed, timingDirty: true }),
-  setRayPointCount: (rayPointCount) => set({ rayPointCount }),
   setVehicleIconUrl: (vehicleIconUrl) => set({ vehicleIconUrl }),
   syncTiming: (streamInterval, replaySpeed) =>
     set((state) =>
