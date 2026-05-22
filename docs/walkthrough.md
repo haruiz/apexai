@@ -214,6 +214,67 @@ graph TD
 
 ---
 
+## 📋 The Unified Schema Definition
+
+To eliminate separate type interfaces and distinct file columns, a single data contract represents all three recommendation types:
+
+| Field Name | Type | Allowed Values | Nullable / Optional | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`id`** | String | Unique string | No | Unique ID (prefixed by source, e.g. `physics-`, `gemini-`, `driver-`). |
+| **`ruleType`** | String | `'Physics' \| 'Ideal' \| 'Driver'` | No | The source type of the coaching rule. |
+| **`sector_id`** | Integer | `1` to `50` | No | Track sector segment ID. |
+| **`tag`** | String | Category name | No | Category (e.g. `Speed`, `Braking`, `Acceleration`, `Gearing`, `Line`, `Traction`, `Stability`, `Transition`). |
+| **`title`** | String | Text instruction | No | Short actionable instruction to the driver. |
+| **`description`** | String | Text detail | Yes (Empty string in CSV) | Multi-sentence detailed telemetry analysis and coaching advice. |
+| **`metric`** | String | Metric key | Yes (Empty string in CSV) | Telemetry metric basis key (e.g., `min_speed`, `brake_lockup`, `throttle_dips`). |
+| **`operator`** | String | `'<' \| '>' \| '!=' \| '='` | Yes (Empty string in CSV) | Comparison operator for rule validation. |
+| **`threshold`** | Float | Decimal value | Yes (Empty string in CSV) | Numerical metric trigger threshold. |
+| **`optimal_value`** | Float | Decimal value | Yes (Empty string in CSV) | Reference high-performance benchmark value. |
+| **`average_value`** | Float | Decimal value | Yes (Empty string in CSV) | Reference user average performance value. |
+| **`frequency`** | Float | `0.0` to `1.0` | Yes (Empty string in CSV) | Estimated check occurrence frequency. |
+| **`priority`** | Integer | Positive integer | Yes (Empty string in CSV) | Sequential stack rank priority order (1 is highest). |
+| **`audio_file`** | String | GCS Audio Path | Yes (Empty string in CSV) | Reference path to cloud-synthesized text-to-speech audio file. |
+
+---
+
+## 🗺️ Rule Type Source Mappings
+
+Each of the three coaching recommendations sources maps its native parameters to the unified schema fields as follows:
+
+```mermaid
+graph TD
+    subgraph Rust WASM Physics Engine
+        A[Physics Rules] -->|ruleType: 'Physics'| U[Unified Schema]
+    end
+    subgraph Gemini AI Generator
+        B[AI Ideal Rules] -->|ruleType: 'Ideal'| U
+    end
+    subgraph Custom Driver Notes
+        C[Driver Notes] -->|ruleType: 'Driver'| U
+    end
+    U -->|JSON Payload| D[latest.json Push]
+    U -->|CSV Generation| E[coaching_recommendations.csv]
+```
+
+### Mapping Matrix
+| Unified Schema Field | 🏎️ Rust WASM Physics Rule | 🤖 Gemini AI Rule | 📝 Custom Driver Note |
+| :--- | :--- | :--- | :--- |
+| **`id`** | `"physics-[metric]-[sector]"` | `"gemini-[sector]-[index]"` | `"driver-[timestamp]"` |
+| **`ruleType`** | `'Physics'` | `'Ideal'` | `'Driver'` |
+| **`tag`** | `tag` | `tag` | `tag` |
+| **`title`** | `title` | `title` | `title` |
+| **`description`** | Dynamic analytical string | Generative visual detail | Manual user entry |
+| **`metric`** | Physics telemetry metric name | AI selected performance metric | `'geolocation'` |
+| **`operator`** | Evaluated condition operator | Statistical boundary operator | `null` / `""` |
+| **`threshold`** | Pre-calculated physical limit | Calculated delta boundary | `null` / `""` |
+| **`optimal_value`** | Baseline benchmark target | Fastest average benchmark target | `null` / `""` |
+| **`average_value`** | Current user sector average | Average sector user average | `null` / `""` |
+| **`frequency`** | `1.0` (evaluated continuously) | Percentage of user laps violating delta | `null` / `""` |
+| **`priority`** | Physics priority (1, 2, or 3) | Statistical priority (1, 2, or 3) | Stack rank position index |
+| **`audio_file`** | TTS path for physics instruction | TTS path for Gemini instruction | TTS path for driver text note |
+
+---
+
 ## 🚀 Deployment & DevOps
 
 The ecosystem is engineered for seamless cloud deployment to complement the offline edge applications.
