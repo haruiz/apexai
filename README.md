@@ -9,7 +9,7 @@ ApexAI is a real-time, on-device AI coaching system designed for professional an
 
 Following our AI Field Test at Sonoma Raceway—where we evaluated the system under real-world conditions and collected live telemetry data for our assigned driver—the ApexAI architecture was refined around three primary components:
 
-### 1. Memory Bank Generator (located in the [dashboard/](dashboard) directory)
+### 1. Memory Bank Generator (located in the [dashboard/](https://github.com/VikramTiwari/ideal-racing-ling) directory)
 
 ![Memory Bank Generator](images/memory-bank-generator.png)
 
@@ -23,7 +23,7 @@ These notes can be exported as a "brain-transfer" payload and loaded into the mo
 
 A trackside analysis dashboard for visualizing logged sensor data extracted from the mobile device post-session. It is designed to identify performance bottlenecks and debug telemetry streams. Additionally, a built-in simulator enables developers to emulate track sessions, facilitating end-to-end testing of the mobile coaching application in a desktop environment.
 
-### 3. Mobile AI Coaching App (located in the [mobile/](mobile) directory)
+### 3. Mobile AI Coaching App (located in the [mobile/](https://github.com/seagomezar/sonoma-racing-coach) directory)
 
 ![Mobile AI Coaching App](images/mobile-ai-coaching-app.png)
 
@@ -39,7 +39,7 @@ To minimize latency under racing conditions, the Gemma implementation was benchm
 
 For each of the three core system components, we have implemented specific software modules:
 
-### 1. Memory Bank Generator (located in [dashboard/](dashboard))
+### 1. Memory Bank Generator (located in [dashboard/](https://github.com/VikramTiwari/ideal-racing-ling))
 The **Memory Bank Generator** is built as a web-based data-analysis suite:
 * **Frontend**: React + Vite frontend leveraging Leaflet for canvas-based, high-performance rendering of map lines, telemetry points, and friction circles.
 * **Backend**: Node.js + Express API which serves maps tiles, manages run folders, and runs the analytics workflow.
@@ -55,7 +55,7 @@ The trackside **Telemetry and Simulation Dashboard** consists of the telemetry s
 * **FastAPI Broadcaster**: Multiplexes and streams sensor packets to active listeners via WebSocket (`ws://localhost:8000/ws/telemetry`) and Server-Sent Events (SSE) (`/events/telemetry`) endpoints.
 * **Next.js Web UI**: Located in `ui/`. Connects to the FastAPI server, maps the car's path in real time, and renders charts for active sensor channels. It includes seek, playback speed, and pause controllers via HTTP API calls.
 
-### 3. Mobile AI Coaching App (located in [mobile/](mobile))
+### 3. Mobile AI Coaching App (located in [mobile/](https://github.com/seagomezar/sonoma-racing-coach))
 The **Mobile AI Coaching App** is a native Android application built in Kotlin:
 * **Dual Coaching Engines**:
   * **Deterministic Mode**: Continuously evaluates driver speed and inputs against `.csv` limit tables using a local rules runner to trigger immediate alarms.
@@ -73,9 +73,9 @@ The **Mobile AI Coaching App** is a native Android application built in Kotlin:
 
 For detailed setup, installation, and execution instructions, please refer to the respective documentation for each component based on the folder structure:
 
-* 🏎️ **Memory Bank Generator**: See [dashboard/README.md](dashboard/README.md) for web client, Express server, and Rust data-engine setup.
+* 🏎️ **Memory Bank Generator**: See [dashboard/README.md](https://github.com/VikramTiwari/ideal-racing-ling/blob/main/README.md) for web client, Express server, and Rust data-engine setup.
 * 📊 **Telemetry and Simulation Dashboard**: See [instructions.md](instructions.md) for installing, configuring, running, and testing the telemetry and simulation server and web dashboard.
-* 📱 **Mobile AI Coaching App**: See [mobile/README.md](mobile/README.md) for Android app installation, Gemma 4:E2B model setup, and deployment instructions.
+* 📱 **Mobile AI Coaching App**: See [mobile/README.md](https://github.com/seagomezar/sonoma-racing-coach/blob/main/README.md) for Android app installation, Gemma 4:E2B model setup, and deployment instructions.
 
 ## Roadmap
 
