@@ -50,7 +50,8 @@ function assignHeadingIds(root) {
 }
 
 function buildToc(root) {
-  const headings = [...root.querySelectorAll("h2, h3")];
+  const staticHeadings = [...document.querySelectorAll(".timeline-section h2")];
+  const headings = [...staticHeadings, ...root.querySelectorAll("h2, h3")];
   if (!headings.length) {
     tocList.innerHTML = '<li><a href="#top">Overview</a></li>';
     return;
@@ -76,7 +77,7 @@ function trackActiveSection(root) {
   const headings = links
     .map((link) => {
       const id = decodeURIComponent(link.hash.slice(1));
-      return root.querySelector(`#${CSS.escape(id)}`);
+      return document.querySelector(`#${CSS.escape(id)}`);
     })
     .filter(Boolean);
 

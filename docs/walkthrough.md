@@ -22,6 +22,70 @@ By running inference locally on the mobile device, the system can deliver low-la
 
 The ecosystem operates across three distinct architectural flows, separating offline pedagogical planning from real-time, in-car execution:
 
+## 📅 Implementation Timeline & Code Change Log
+
+This timeline is grounded in the component contracts documented in the root `README.md`, `dashboard/README.md`, and `mobile/README.md`.
+
+| Date / Phase | Implementation Milestone | Important Code Changes |
+| :--- | :--- | :--- |
+| **Project start** | Telemetry replay foundation | Built the FastAPI telemetry simulation layer around Racelogic VBOX replay, normalized `.vbo` packets, and established the replay contract that later served both dashboard and mobile clients. |
+| **April 29** | Architecture/code review & travel approval | Reviewed the first deliverable architecture: `src/apexai/server/` for telemetry ingestion/replay, `ui/` for simulator visualization, and `mobile/` as the target Android edge runtime for real-time coaching. |
+| **Pre-field-test integration** | Memory bank generator and edge coach split | Implemented the dashboard workflow described in `dashboard/README.md`: React/Vite map UI, Express API orchestration, Rust `data-engine` parsing, WASM rule evaluation, deterministic rule generation, Gemini-assisted recommendations, screenshot context, and `latest.json` memory export. |
+| **May 23** | Field test at Sonoma Raceway | Successfully tested the application at Sonoma Raceway: the mobile app worked, consumed telemetry, loaded memory-bank context, and proved the driver-facing coaching loop under real track conditions. The main issue found was GPS-dependent sector lookup across two same-day driving sections with different sky conditions. |
+| **May 30** | Project concludes | Finalized the post-Sonoma architecture around three components: memory generation, telemetry simulation, and mobile edge coaching. Documented VBOX/CAN replay, decoded CAN streaming, dual mobile coaches, memory-bank selection, GPS-based sector matching, LiteRT Gemma inference, cooldowns, Android TextToSpeech delivery, and the need to improve GPS resilience. |
+
+The timeline also marks the key implementation shift: early work centered on replaying telemetry; the first deliverable proved the simulator/dashboard path; the field-test work connected that path to memory-bank generation and Android edge coaching; and the final project state documents the system as a three-component architecture.
+
+## 🏁 Updates After the Sonoma Field Test
+
+The Sonoma Raceway field test validated the core ApexAI premise under real trackside conditions: the system can ingest real driving telemetry, prepare coaching context before a run, and keep the in-car coaching loop focused on low-latency, offline execution. The post-test work concentrated on hardening the data path, separating analysis-time tooling from in-car runtime behavior, and making the coaching memory workflow easier to inspect and transfer.
+
+Most importantly, the application was successfully tested in the field and the end-to-end coaching flow worked. The Android app could receive telemetry, use the selected memory bank, map the car to track sectors, and produce driver-facing coaching output. This confirmed that the core architecture is viable beyond simulation.
+
+The field test also exposed the most important reliability challenge: the current memory activation path relies heavily on GPS quality to extract sector-level notes from the memory bank. On the same Sonoma field-test day, the driver completed two driving sections under different conditions. During the cloudy section, the GPS signal was not strong enough to consistently support reliable sector matching. During the sunny, open-sky section, GPS behavior improved substantially and the sector lookup worked as expected. This means the current design works well under good satellite visibility, but it needs a stronger fallback strategy before it can be considered robust for all track conditions.
+
+Key updates made after the field test:
+
+- **Telemetry source hardening:** The backend now supports both legacy Racelogic VBOX `.vbo` replay and raw CAN hex chunk replay, allowing developers to reproduce Sonoma sessions from recorded files while preserving the byte-level shape of CAN captures.
+- **Decoded CAN stream support:** The telemetry server can decode CAN logs into vehicle parameters such as RPM, gear, brake pressure, and water temperature while still keeping raw replay available for adapter-level testing.
+- **Trackside simulation loop:** The root telemetry dashboard now acts as both an inspection surface and a simulator, so the mobile app can be tested against replayed Sonoma data before returning to the car.
+- **Memory bank export path:** Coaching notes generated from the dashboard are packaged as structured JSON memory payloads that can be loaded into the Android app for offline use.
+- **Dual mobile coach path:** The Android app now documents both `HeuristicBaseAICoach` for deterministic threshold rules and `GemmaCoach` for LiteRT-LM JSON decisions grounded in triggered memory notes.
+- **Sector-aware mobile evaluation:** The mobile app uses `track_sectors.json`, haversine lookup, an 80-meter sector acceptance threshold, sector telemetry metrics, priority/frequency selection, and 12-second sector/command cooldowns.
+- **Audio delivery path:** The mobile runtime turns selected commands into driver-facing audio with Android `TextToSpeech`, keeping the coaching output concise and local to the device.
+- **GPS resilience requirement:** Because memory notes are currently selected by GPS-to-sector matching, future work should add fallback sector estimation using telemetry continuity, lap progress, speed/distance integration, heading, CAN-derived signals, or confidence scoring when GPS quality drops.
+
+The field test also clarified the boundary between development-time simulation and production in-car execution. Cloud services and dashboards are useful for preparation, replay, and deployment, but the actual driver-facing loop remains local to the car and phone.
+
+## 🔁 Overall Architecture & Component Changes
+
+After Sonoma, the system was reorganized around three primary components with clearer responsibilities:
+
+1. **Memory Bank Generator (`dashboard/`)**: A coach-facing analysis environment for turning telemetry, screenshots, sector deltas, and human feedback into structured coaching memories. This component owns the React/Vite map UI, Express API orchestration, Rust VBOX parsing, deterministic and Gemini-assisted rule generation, WASM rule evaluation, GCS `latest.json` export, and optional audio enrichment.
+2. **Telemetry and Simulation Dashboard (`src/`, `ui/`)**: A replay and inspection layer that normalizes VBOX and CAN data, broadcasts telemetry over SSE and WebSockets, and provides a desktop simulator for validating the mobile app against captured sessions.
+3. **Mobile AI Coaching App (`mobile/`)**: The in-car runtime that receives live or simulated telemetry, loads the exported memory bank, maps GPS to sectors, runs deterministic rules or Gemma-based coaching locally, and delivers concise audio coaching through Android Text-to-Speech.
+
+The main architectural change is the split between **offline pedagogical planning** and **real-time edge coaching**. The dashboard side can perform heavier analysis, generate memory payloads, and visualize telemetry in detail. The mobile side stays deliberately narrow: ingest telemetry, select the relevant memory context, evaluate sector rules, decide whether Gemma should speak, and deliver only actionable guidance.
+
+This separation gives the project a more reliable field-test loop:
+
+```mermaid
+graph TD
+    Sonoma["Sonoma Field Data"]
+    Replay["Telemetry Replay & Simulation"]
+    Analysis["Dashboard Analysis"]
+    Memories["Memory Bank Export"]
+    Mobile["Android Edge Coach"]
+    Driver["Predictive Audio Guidance"]
+
+    Sonoma --> Replay
+    Replay --> Analysis
+    Analysis --> Memories
+    Memories --> Mobile
+    Replay -- "WebSocket / SSE test stream" --> Mobile
+    Mobile --> Driver
+```
+
 ### 1. Offline Analysis & Memory Generation
 Before heading to the track, the driving coach or engineer uses pre-recorded telemetry to build a strategic plan ("memories") for the driver.
 
@@ -50,17 +114,19 @@ graph TD
     end
 ```
 
-### 2. Loading Memories to the Android App
-The generated `memories.json` encapsulates the hyper-specific coaching heuristics (e.g., "brake 50m earlier at Turn 3"). Currently, this file is side-loaded onto the driver's Android device, securely bridging the offline analysis with the offline execution environment.
+### 2. Publishing Memories to the Android App
+The generated memory bank encapsulates the hyper-specific coaching heuristics (e.g., "brake 50m earlier at Turn 3"). This cloud synchronization path is now implemented: the dashboard exports mobile-compatible `latest.json` memory banks to Google Cloud Storage with driver and car identifiers, and the Android app lists, downloads, inspects, and selects those `latest.json` files from the same bucket before live coaching.
 
 ```mermaid
 graph LR
-    JSON["memories.json (from Dashboard)"]
-    ADB["USB / ADB Push"]
-    Storage["Android Local Storage (/data/local/tmp/)"]
+    JSON["latest.json (from Dashboard)"]
+    GCS["Google Cloud Storage"]
+    Store["Android MemoryBankFileStore"]
+    Storage["Android App Storage"]
     
-    JSON --> ADB
-    ADB --> Storage
+    JSON --> GCS
+    GCS --> Store
+    Store --> Storage
 ```
 
 ### 3. Realtime Coaching (Production Environment)
@@ -284,9 +350,14 @@ The ecosystem is engineered for seamless cloud deployment to complement the offl
 - **Cloud Run Orchestration:** Both the backend simulation server and the static Next.js dashboard are deployed via `Makefile` recipes directly to **Google Cloud Run**, automatically injecting cloud-assigned `PORT` configurations for seamless routing.
 - **Unified Repository:** While organized into `ui/`, `mobile/`, and server modules, the repository relies on root-level `.gitignore` rules and strict separation of concerns, maintaining a clean CI/CD pipeline.
 
+## ✅ Implemented Cloud Memory Synchronization
+
+- **Cloud Memory Synchronization:** The memory sync path is implemented. The dashboard normalizes generated coaching rules into mobile-compatible records, exports `${driver}/${car}/latest.json` plus timestamped backups to Google Cloud Storage, and can enrich commands with generated audio files. The Android app uses `MemoryBankFileStore` to list available non-backup `latest.json` files from the ApexAI bucket, download the selected memory bank into app storage, inspect the JSON, and use it as the live memory source for both the heuristic and Gemma coaches.
+- **Remaining reliability work:** The cloud memory path removes the need for wired ADB side-loading during normal operation. The more important next improvement is GPS resilience for sector-level memory activation when satellite signal quality drops on track.
+
 ## 🚀 Future Improvements
 
-- **Cloud Memory Synchronization:** Currently, the `memories.json` files are side-loaded directly to the Android device via ADB. A key future improvement is to synchronize these coaching heuristics over **Firebase**. The Dashboard will push generated memories directly to a Firebase bucket, and the Android App will pull these updates dynamically upon startup, entirely eliminating the need for wired ADB side-loading before track sessions.
+- **GPS resilience for memory-note activation:** Added GPS resilience as a required improvement for memory-note activation on track. Because sector-level notes are currently selected through GPS-to-sector matching, future work should add fallback sector estimation when GPS signal quality drops. Candidate improvements include telemetry continuity, lap-progress tracking, speed/distance integration, heading, CAN-derived signals, and confidence scoring before activating a sector-specific memory note.
 
 ---
 

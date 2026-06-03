@@ -55,6 +55,129 @@
           </div>
         </section>
 
+        <section class="timeline-section" aria-labelledby="implementation-timeline">
+          <div class="section-kicker">Change log</div>
+          <h2 id="implementation-timeline">Implementation timeline</h2>
+          <p>
+            ApexAI evolved from a telemetry replay prototype into a field-tested,
+            offline edge coaching system. This timeline highlights how each
+            implementation changed from the first deliverable through the
+            Sonoma Raceway field test and final project wrap-up.
+          </p>
+
+          <ol class="timeline">
+            <li class="timeline-item">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">Project start</span>
+                <h3>Telemetry replay foundation</h3>
+                <p>
+                  Built the first FastAPI telemetry server around Racelogic VBOX
+                  replay so recorded laps could be streamed like live car data,
+                  matching the simulator foundation described in the root README.
+                </p>
+                <ul>
+                  <li>Parsed `.vbo` sessions into normalized telemetry packets.</li>
+                  <li>Added throttled or timestamp-based replay for repeatable simulation.</li>
+                  <li>Established the FastAPI telemetry contract later used by SSE and WebSocket clients.</li>
+                </ul>
+              </div>
+            </li>
+
+            <li class="timeline-item">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">April 29</span>
+                <h3>Architecture/code review &amp; travel approval</h3>
+                <p>
+                  Presented the first deliverable for architecture and code
+                  review, then secured approval to take the system into the
+                  Sonoma Raceway field-test phase.
+                </p>
+                <ul>
+                  <li>Reviewed the `src/apexai/server/` telemetry server and replay pipeline.</li>
+                  <li>Validated the `ui/` dashboard as the simulator and visualization harness.</li>
+                  <li>Confirmed the Android app path for memory-driven, in-car edge coaching.</li>
+                </ul>
+              </div>
+            </li>
+
+            <li class="timeline-item">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">Pre-field-test integration</span>
+                <h3>Memory bank and edge coach split</h3>
+                <p>
+                  Split heavy analysis from in-car execution by moving coaching
+                  reasoning into exportable memory banks and keeping the Android
+                  app focused on low-latency local decisions.
+                </p>
+                <ul>
+                  <li>Implemented React/Vite + Express dashboard flows for ideal-line and rule generation.</li>
+                  <li>Used the Rust `dashboard/data-engine/` parser and WASM rule evaluator for sector-aware analysis.</li>
+                  <li>Exported `latest.json` memory banks with deterministic and Gemini-assisted recommendations.</li>
+                </ul>
+              </div>
+            </li>
+
+            <li class="timeline-item highlight">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">May 23</span>
+                <h3>Field test at Sonoma Raceway</h3>
+                <p>
+                  Validated the full workflow at Sonoma Raceway using real
+                  driving telemetry, trackside analysis, and the in-car coaching
+                  loop as the main driver-facing runtime. The app was
+                  successfully tested and the coaching flow worked in practice.
+                </p>
+                <ul>
+                  <li>Collected real telemetry for replay, debugging, and memory-rule refinement.</li>
+                  <li>Validated the mobile ingestion path from simulator telemetry and CANable/CAN data.</li>
+                  <li>Observed GPS-dependent sector lookup as the main field reliability challenge.</li>
+                  <li>Compared two same-day driving sections: cloudy sky produced weak GPS, while sunny open-sky conditions produced accurate sector matching.</li>
+                </ul>
+              </div>
+            </li>
+
+            <li class="timeline-item">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">May 30</span>
+                <h3>Project concludes</h3>
+                <p>
+                  Closed the project with the post-Sonoma implementation updates
+                  folded into the final documentation and architecture narrative.
+                </p>
+                <ul>
+                  <li>Documented `VBOTelemetrySource`, `CanRawChunkTelemetrySource`, and `CanDecodedTelemetrySource` support.</li>
+                  <li>Captured mobile dual-coach behavior: `HeuristicBaseAICoach` and `GemmaCoach` over the same memory bank.</li>
+                  <li>Identified GPS resilience as the key future improvement for memory-note activation on track.</li>
+                  <li>Grounded the final architecture in the dashboard, root, and mobile README component contracts.</li>
+                </ul>
+              </div>
+            </li>
+
+            <li class="timeline-item">
+              <div class="timeline-marker" aria-hidden="true"></div>
+              <div class="timeline-card">
+                <span class="timeline-date">Future improvement</span>
+                <h3>GPS resilience for memory-note activation</h3>
+                <p>
+                  Improve sector-level memory activation when GPS signal quality
+                  drops, so the coach can stay reliable in cloudy or obstructed
+                  track conditions.
+                </p>
+                <ul>
+                  <li>Add fallback sector estimation using telemetry continuity and lap progress.</li>
+                  <li>Blend GPS with speed, heading, distance integration, and CAN-derived signals.</li>
+                  <li>Use confidence scoring before activating sector-level memory notes.</li>
+                </ul>
+              </div>
+            </li>
+          </ol>
+        </section>
+
         <article class="content" id="content" aria-live="polite">
           <div class="loading">
             <span class="loader" aria-hidden="true"></span>
