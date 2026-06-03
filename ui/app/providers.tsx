@@ -8,42 +8,42 @@ const theme = createTheme({
   palette: {
     mode: "dark",
     primary: {
-      main: "#ff1f3d",
-      light: "#ff4d64",
-      dark: "#b40019"
+      main: "#72f4ff",
+      light: "#a8fbff",
+      dark: "#29b7c7"
     },
     secondary: {
-      main: "#f7f7f7",
-      dark: "#c7c7c7"
+      main: "#ff6a00",
+      dark: "#b84900"
     },
     error: {
-      main: "#ff334f"
+      main: "#ff3d4d"
     },
     success: {
-      main: "#22c55e"
+      main: "#62e6bc"
     },
     warning: {
-      main: "#f5b301"
+      main: "#ffb300"
     },
     background: {
-      default: "#050506",
-      paper: "#0c0d10"
+      default: "#151712",
+      paper: "#0a0d12"
     },
     text: {
-      primary: "#f8f8f8",
-      secondary: "#a3a3a3"
+      primary: "#f7f4ea",
+      secondary: "#a5a8b3"
     },
-    divider: "rgba(255, 255, 255, 0.12)",
+    divider: "rgba(255, 255, 255, 0.1)",
     action: {
-      hover: "rgba(255, 31, 61, 0.12)",
-      selected: "rgba(255, 31, 61, 0.18)"
+      hover: "rgba(114, 244, 255, 0.12)",
+      selected: "rgba(114, 244, 255, 0.18)"
     }
   },
   shape: {
     borderRadius: 8
   },
   typography: {
-    fontFamily: "Arial, Helvetica, sans-serif",
+    fontFamily: "Outfit, Inter, Arial, Helvetica, sans-serif",
     h1: {
       fontWeight: 900,
       letterSpacing: 0
@@ -62,8 +62,10 @@ const theme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          backgroundImage: "linear-gradient(180deg, rgba(255, 31, 61, 0.06), rgba(255, 31, 61, 0) 36%)",
-          border: "1px solid rgba(255, 255, 255, 0.13)",
+          backgroundColor: "rgba(10, 13, 18, 0.84)",
+          backgroundImage:
+            "radial-gradient(circle at 92% 18%, rgba(255, 106, 0, 0.12), transparent 30%), linear-gradient(180deg, rgba(22, 24, 20, 0.92), rgba(8, 10, 13, 0.92))",
+          border: "1px solid rgba(255, 255, 255, 0.1)",
           boxShadow: "0 18px 48px rgba(0, 0, 0, 0.46)"
         }
       }
@@ -78,11 +80,11 @@ const theme = createTheme({
           borderRadius: 6
         },
         contained: {
-          backgroundImage: "linear-gradient(135deg, #ff1f3d, #b40019)",
-          color: "#ffffff",
+          backgroundImage: "linear-gradient(135deg, #72f4ff, #29b7c7)",
+          color: "#001316",
           fontWeight: 900,
           "&:hover": {
-            backgroundImage: "linear-gradient(135deg, #ff4d64, #d6001f)"
+            backgroundImage: "linear-gradient(135deg, #a8fbff, #72f4ff)"
           }
         }
       }
@@ -95,7 +97,7 @@ const theme = createTheme({
     MuiOutlinedInput: {
       styleOverrides: {
         root: {
-          backgroundColor: "rgba(0, 0, 0, 0.34)"
+          backgroundColor: "rgba(8, 10, 14, 0.72)"
         }
       }
     },
@@ -113,7 +115,7 @@ const theme = createTheme({
           borderBottomColor: "rgba(255, 255, 255, 0.09)"
         },
         head: {
-          backgroundColor: "#101114"
+          backgroundColor: "#111625"
         }
       }
     }

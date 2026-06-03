@@ -47,14 +47,91 @@ class TelemetryPacket(BaseModel):
     raw: dict[str, Any] = Field(default_factory=dict, description="Original parsed VBO row.")
 
 
+class CanRawChunkPacket(BaseModel):
+    """Opaque CAN raw hex chunk streamed from a captured chunk file.
+
+    The server does not decode, split, or otherwise transform CAN chunk data.
+    ``line`` preserves the complete source line without its trailing newline,
+    while ``chunk`` preserves the raw hex chunk text after the timestamp comma.
+    """
+
+    source: Literal["can"] = Field(default="can", description="Active telemetry source kind.")
+    sequence: int = Field(description="Zero-based chunk order from the source file.")
+    timestamp: float = Field(description="Capture timestamp in milliseconds when present, otherwise sequence.")
+    line: str = Field(description="Complete source line without its trailing newline.")
+    chunk: str = Field(description="Raw hex chunk text exactly as captured after the timestamp comma.")
+
+
+class CanDecodedPacket(BaseModel):
+    """Decoded CAN telemetry state streamed from a raw SLCAN frame file."""
+
+    source: Literal["can"] = Field(default="can", description="Active telemetry source kind.")
+    sequence: int = Field(description="Decoded packet sequence.")
+    timestamp: float = Field(description="Frame timestamp in seconds.")
+    latitude: float | None = None
+    longitude: float | None = None
+    speed: float | None = None
+    heading: float | None = None
+    altitude: float | None = None
+    satellites: int | None = None
+    throttle: float | None = None
+    brake: float | None = None
+    steering: float | None = None
+    gear: int | None = None
+    lap: int | None = None
+    rpm: float | None = None
+    waterTempF: float | None = None
+    waterPressurePsi: float | None = None
+    rollRateDps: float | None = None
+    oilFilterTempF: float | None = None
+    oilPressurePsi: float | None = None
+    analogOilTempF: float | None = None
+    fuelPressurePsi: float | None = None
+    ecuMilOut: int | None = None
+    brakePressurePsi: float | None = None
+    ecuDbwApp1Percent: float | None = None
+    pedalPositionPercent: float | None = None
+    brakeSwitchApplied: bool | None = None
+    pitchRateDps: float | None = None
+    yawRateDps: float | None = None
+    lateralAccelG: float | None = None
+    inlineAccelG: float | None = None
+    fuelLevelGallons: float | None = None
+    batteryVoltage: float | None = None
+    verticalAccelG: float | None = None
+    wheelSpeedFlMph: float | None = None
+    wheelSpeedFrMph: float | None = None
+    wheelSpeedRlMph: float | None = None
+    wheelSpeedRrMph: float | None = None
+    ecuSpeedMph: float | None = None
+    outsideTempF: float | None = None
+    engineOilTempF: float | None = None
+    dscIntervening: bool | None = None
+    shockPots: Any = None
+    tireSlipVectors: Any = None
+    wheelSpeedDeltas: list[float] | None = None
+    raw: dict[str, Any] = Field(default_factory=dict, description="Full decoded CSV row/state.")
+
+
+TelemetryStreamPacket = TelemetryPacket | CanRawChunkPacket | CanDecodedPacket
+
+
 class TelemetryTracePoint(BaseModel):
-    """Minimal GPS sample used by the frontend to preload the full race trace."""
+    """GPS sample used by the frontend to preload and color the full race trace."""
 
     sequence: int = Field(description="Zero-based packet order after timestamp sorting.")
     timestamp: float = Field(description="Sample timestamp in seconds.")
     latitude: float = Field(description="Latitude in decimal degrees.")
     longitude: float = Field(description="Longitude in decimal degrees.")
     heading: float | None = Field(default=None, description="Vehicle heading in degrees.")
+    speed: float | None = Field(default=None, description="Vehicle speed.")
+    altitude: float | None = Field(default=None, description="Vehicle altitude or height.")
+    satellites: int | None = Field(default=None, description="Number of GPS satellites.")
+    throttle: float | None = Field(default=None, description="Throttle input value.")
+    brake: float | None = Field(default=None, description="Brake input value.")
+    steering: float | None = Field(default=None, description="Steering input value.")
+    gear: int | None = Field(default=None, description="Current gear.")
+    lap: int | None = Field(default=None, description="Current lap number.")
 
 
 class ReplayState(BaseModel):
@@ -63,16 +140,15 @@ class ReplayState(BaseModel):
     Attributes:
         status: Replay lifecycle state.
         source: Active telemetry source kind.
-        current_index: Index of the next sample to publish, or number of live
-            CAN packets published.
+        current_index: Index of the next sample or CAN raw chunk to publish.
         total_samples: Total number of parsed telemetry samples.
         replay_speed: Multiplier applied to original telemetry sample intervals.
         stream_interval: Fixed seconds between streamed packets, when set.
         loop: Whether replay loops after the final sample.
         vbo_file: Source VBO file path. Empty for non-VBO sources.
-        source_file: Source file path, such as the VBO or CAN DBC path.
-        can_interface: python-can interface name when using CAN.
-        can_channel: python-can channel when using CAN.
+        source_file: Source file path, such as the VBO or CAN raw chunk file.
+        can_interface: Legacy field retained for older clients; unused for raw chunk replay.
+        can_channel: Legacy field retained for older clients; unused for raw chunk replay.
     """
 
     status: ReplayStatus = Field(description="Replay lifecycle state.")
@@ -84,8 +160,8 @@ class ReplayState(BaseModel):
     loop: bool = Field(description="Whether replay loops after the final sample.")
     vbo_file: str = Field(description="Source VBO file path.")
     source_file: str | None = Field(default=None, description="Source file path for the active source.")
-    can_interface: str | None = Field(default=None, description="python-can interface name when using CAN.")
-    can_channel: str | None = Field(default=None, description="python-can channel when using CAN.")
+    can_interface: str | None = Field(default=None, description="Legacy CAN interface field; unused for raw chunk replay.")
+    can_channel: str | None = Field(default=None, description="Legacy CAN channel field; unused for raw chunk replay.")
 
 
 class SpeedUpdate(BaseModel):
@@ -96,6 +172,16 @@ class SpeedUpdate(BaseModel):
     """
 
     speed: float = Field(description="Positive replay speed multiplier.")
+
+
+class LoopUpdate(BaseModel):
+    """Request body for changing the replay loop mode.
+
+    Attributes:
+        loop: Whether replay loops after the final sample.
+    """
+
+    loop: bool = Field(description="Whether replay loops after the final sample.")
 
 
 class StreamIntervalUpdate(BaseModel):

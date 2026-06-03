@@ -1,7 +1,7 @@
 """CLI bootstrap for the ApexAI telemetry streaming server.
 
 This module owns command-line parsing and source construction. It validates the
-arguments needed by each source, creates the selected VBO or CAN producer, then
+selected VBO or CAN raw chunk file, creates the matching replay producer, then
 passes that producer into the FastAPI app. SSE and WebSocket clients connect to
 the same endpoints regardless of which source is selected.
 """
@@ -18,7 +18,15 @@ import uvicorn
 from .api import create_app
 from .broadcaster import Broadcaster
 from .config import ServerConfig
-from .telemetry_sources import ParsedVBO, TelemetrySource, VBOTelemetrySource
+from .telemetry_sources import (
+    CanDecodedTelemetrySource,
+    CanRawChunkTelemetrySource,
+    ParsedVBO,
+    TelemetrySource,
+    VBOTelemetrySource,
+    decode_can_raw_frame_file_to_csv,
+    parse_can_raw_chunk_file,
+)
 from .vbo_parser import VBOParseError, parse_vbo_file
 
 
@@ -29,10 +37,8 @@ class _ArgumentFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDes
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for the telemetry server.
 
-    The parser includes both source-independent server options and
-    source-specific input options. ``--source vbo`` requires ``--vbo-file``.
-    ``--source can`` requires ``--dbc-file`` and uses the CAN interface/channel
-    arguments to open a ``python-can`` bus.
+    The parser includes source-independent server options and a single-file
+    ``--input-file`` selector. ``--vbo-file`` remains as a compatibility alias.
 
     Returns:
         Configured argument parser for ``python -m apexai.server``.
@@ -43,9 +49,21 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=_ArgumentFormatter,
         epilog=(
             "Hints:\n"
-            "  VBO replay: apexai-server --autostart\n"
+            "  VBO replay: apexai-server --input-file dashboard/data/raw/VBOX0148.vbo --autostart\n"
+            "  CAN raw replay: apexai-server --input-file telemetry-data/CAN_files/can_raw_hex_chunks_usb_20260523_113848_600.txt --autostart\n"
+            "  CAN decoded replay: apexai-server --input-file telemetry-data/CAN_files/can_raw_frames_usb_20260523_113848_600.txt --decoded --autostart\n"
             "  Output frequency: POST /replay/stream-interval with seconds=0.1 for about 10 Hz."
         ),
+    )
+    parser.add_argument(
+        "--input-file",
+        default=None,
+        help="Path to one telemetry file. Supports .vbo, can_raw_hex_chunks*.txt, and can_raw_frames*.txt files.",
+    )
+    parser.add_argument(
+        "--vbo-file",
+        default=None,
+        help="Backward-compatible alias for --input-file when selecting one VBO file.",
     )
     parser.add_argument("--data-dir", default="data", help="Path to the directory containing VBO files.")
     parser.add_argument("--host", default="0.0.0.0", help="Host interface for the FastAPI server to bind.")
@@ -56,26 +74,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--replay-speed",
         default=1.0,
         type=float,
-        help="VBO-only replay speed multiplier. Ignored by live CAN because CAN timing is source-driven.",
+        help="Replay speed multiplier for VBO timestamps or CAN raw chunk capture timestamps.",
     )
     parser.add_argument(
         "--stream-interval",
         default=None,
         type=float,
         help=(
-            "Fixed seconds between published packets. For VBO, omit to use source timestamps. "
-            "For CAN, omit to publish every decoded frame. Example: 0.1 is about 10 Hz."
+            "Fixed seconds between published packets. Omit to use VBO timestamps or CAN capture timestamps. "
+            "Example: 0.1 is about 10 Hz."
         ),
+    )
+    parser.add_argument(
+        "--no-loop",
+        action="store_false",
+        dest="loop",
+        help="Disable looping the replay files.",
     )
     parser.add_argument(
         "--loop",
         action="store_true",
-        help="VBO-only option to restart replay from the first sample after the final sample.",
+        dest="loop",
+        help="Loop the replay files (default).",
     )
+    parser.set_defaults(loop=True)
     parser.add_argument(
         "--autostart",
         action="store_true",
         help="Start the selected source during FastAPI startup instead of waiting for POST /replay/start.",
+    )
+    parser.add_argument(
+        "--decoded",
+        action="store_true",
+        help="Decode CAN raw frame files through apexai.scripts.decode_can before streaming readable values.",
     )
     return parser
 
@@ -104,6 +135,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.stream_interval is not None and args.stream_interval <= 0:
         raise SystemExit("--stream-interval must be greater than zero")
     config = ServerConfig(
+        input_file=Path(args.input_file or args.vbo_file) if (args.input_file or args.vbo_file) else None,
+        decoded=args.decoded,
         data_dir=Path(args.data_dir),
         host=args.host,
         port=args.port,
@@ -129,7 +162,7 @@ def _build_source(
 
     Args:
         config: Runtime server configuration created from command-line
-            arguments. ``config.source`` selects VBO or CAN.
+            arguments. ``config.input_file`` selects one VBO or CAN file when set.
         broadcaster: Publisher shared by all output transports.
 
     Returns:
@@ -139,6 +172,9 @@ def _build_source(
     Raises:
         SystemExit: If required source files are missing or VBO parsing fails.
     """
+
+    if config.input_file is not None:
+        return _build_file_source(config.input_file, config, broadcaster)
 
     vbo_files = list(config.data_dir.glob("*.vbo"))
     if not vbo_files:
@@ -208,6 +244,144 @@ def _build_source(
     )
 
 
+def _build_file_source(
+    input_file: Path,
+    config: ServerConfig,
+    broadcaster: Broadcaster,
+) -> tuple[TelemetrySource, int, list[str], float | None]:
+    """Create a telemetry source from one selected input file."""
+
+    suffix = input_file.suffix.lower()
+    if suffix == ".vbo":
+        return _build_vbo_file_source(input_file, config, broadcaster)
+    if suffix == ".txt" and "can_raw_hex_chunks" in input_file.name:
+        if config.decoded:
+            raise SystemExit("--decoded requires a can_raw_frames*.txt file; hex chunk files are streamed raw.")
+        return _build_can_raw_file_source(input_file, config, broadcaster)
+    if suffix == ".txt" and "can_raw_frames" in input_file.name:
+        if not config.decoded:
+            raise SystemExit("CAN raw frame files must be streamed with --decoded.")
+        return _build_can_decoded_file_source(input_file, config, broadcaster)
+    raise SystemExit(
+        "Unsupported telemetry input file. Use a .vbo, can_raw_hex_chunks*.txt, or can_raw_frames*.txt file."
+    )
+
+
+def _build_vbo_file_source(
+    vbo_file: Path,
+    config: ServerConfig,
+    broadcaster: Broadcaster,
+) -> tuple[TelemetrySource, int, list[str], float | None]:
+    """Create a VBO replay source from a single VBO file."""
+
+    try:
+        lines, columns, first_ts, last_ts = parse_vbo_file(vbo_file)
+    except (FileNotFoundError, VBOParseError) as exc:
+        logging.getLogger(__name__).error("%s", exc)
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        logging.getLogger(__name__).exception("failed to parse VBO file %s", vbo_file)
+        raise SystemExit(1) from exc
+
+    if not lines:
+        logging.getLogger(__name__).error("no telemetry samples parsed from VBO file %s", vbo_file)
+        raise SystemExit(1)
+
+    parsed_vbo = ParsedVBO(
+        file_path=str(vbo_file),
+        columns=columns,
+        data_lines=lines,
+        first_timestamp=first_ts,
+        last_timestamp=last_ts,
+        sequence_offset=0,
+        time_offset=0.0,
+    )
+    duration = None if first_ts is None or last_ts is None else max(0.0, last_ts - first_ts)
+    return (
+        VBOTelemetrySource(
+            [parsed_vbo],
+            broadcaster,
+            replay_speed=config.replay_speed,
+            stream_interval=config.stream_interval,
+            loop=config.loop,
+        ),
+        len(lines),
+        columns,
+        duration,
+    )
+
+
+def _build_can_raw_file_source(
+    can_file: Path,
+    config: ServerConfig,
+    broadcaster: Broadcaster,
+) -> tuple[TelemetrySource, int, list[str], float | None]:
+    """Create an opaque CAN raw hex chunk replay source."""
+
+    try:
+        chunks = parse_can_raw_chunk_file(can_file)
+    except FileNotFoundError as exc:
+        logging.getLogger(__name__).error("%s", exc)
+        raise SystemExit(1) from exc
+
+    if not chunks:
+        logging.getLogger(__name__).error("no CAN raw hex chunks parsed from file %s", can_file)
+        raise SystemExit(1)
+
+    first_ts = chunks[0].timestamp
+    last_ts = chunks[-1].timestamp
+    duration = max(0.0, (last_ts - first_ts) / 1000.0)
+    return (
+        CanRawChunkTelemetrySource(
+            can_file,
+            chunks,
+            broadcaster,
+            replay_speed=config.replay_speed,
+            stream_interval=config.stream_interval,
+            loop=config.loop,
+        ),
+        len(chunks),
+        ["timestamp_ms", "raw_hex_chunk"],
+        duration,
+    )
+
+
+def _build_can_decoded_file_source(
+    can_file: Path,
+    config: ServerConfig,
+    broadcaster: Broadcaster,
+) -> tuple[TelemetrySource, int, list[str], float | None]:
+    """Decode a CAN raw frame file to CSV and create a readable replay source."""
+
+    try:
+        rows, decoded_csv = decode_can_raw_frame_file_to_csv(can_file)
+    except (FileNotFoundError, RuntimeError) as exc:
+        logging.getLogger(__name__).error("%s", exc)
+        raise SystemExit(1) from exc
+
+    if not rows:
+        logging.getLogger(__name__).error("no decoded CAN frames parsed from file %s", can_file)
+        raise SystemExit(1)
+
+    first_ts = rows[0].timestamp
+    last_ts = rows[-1].timestamp
+    duration = max(0.0, last_ts - first_ts)
+    return (
+        CanDecodedTelemetrySource(
+            can_file,
+            rows,
+            decoded_csv,
+            broadcaster,
+            replay_speed=config.replay_speed,
+            stream_interval=config.stream_interval,
+            loop=config.loop,
+        ),
+        len(rows),
+        list(rows[0].values.keys()),
+        duration,
+    )
+
+
 def _print_summary(
     config: ServerConfig,
     source: TelemetrySource,
@@ -221,8 +395,8 @@ def _print_summary(
         config: Runtime server configuration.
         source: Constructed source used to report initial state.
         sample_count: Number of parsed telemetry samples.
-        columns: Original VBO column names. Empty for live CAN.
-        duration: Approximate replay duration in seconds. Unknown for live CAN.
+        columns: Original VBO column names or CAN raw payload labels.
+        duration: Approximate replay duration in seconds.
 
     Returns:
         None.
@@ -230,8 +404,15 @@ def _print_summary(
 
     duration_text = "unknown" if duration is None else f"{duration:.3f}s"
     print("ApexAI telemetry streaming server")
-    file_names = ", ".join(f.name for f in list(config.data_dir.glob("*.vbo")))
-    print(f"  VBO files: {file_names}")
+    state = source.state()
+    if config.input_file is not None:
+        print(f"  Input file: {config.input_file}")
+    else:
+        file_names = ", ".join(f.name for f in list(config.data_dir.glob("*.vbo")))
+        print(f"  VBO files: {file_names}")
+    print(f"  Source: {state.source}")
+    if isinstance(source, CanDecodedTelemetrySource):
+        print(f"  Decoded CSV: {source.decoded_csv}")
     print(f"  Samples: {sample_count}")
     print(f"  Columns: {', '.join(columns)}")
     print(f"  Approx duration: {duration_text}")

@@ -17,8 +17,9 @@ from .schemas import (
     ReplayState,
     SeekRequest,
     SpeedUpdate,
+    LoopUpdate,
     StreamIntervalUpdate,
-    TelemetryPacket,
+    TelemetryStreamPacket,
     TelemetryTracePoint,
 )
 from .telemetry_sources import TelemetrySource
@@ -73,7 +74,7 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
         """Return a lightweight server health payload."""
 
         state = source.state()
-        return {"status": "ok", "source": "vbo", "samples": source.total_samples, "replay": state.status}
+        return {"status": "ok", "source": state.source, "samples": source.total_samples, "replay": state.status}
 
     @app.get("/state", response_model=ReplayState)
     async def state() -> ReplayState:
@@ -121,6 +122,22 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/replay/loop", response_model=ReplayState)
+    async def replay_loop(update: LoopUpdate) -> ReplayState:
+        """Update loop mode.
+
+        Args:
+            update: Request body containing the new loop mode.
+
+        Returns:
+            Updated replay state.
+        """
+
+        try:
+            return await source.set_loop(update.loop)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/replay/stream-interval", response_model=ReplayState)
     async def replay_stream_interval(update: StreamIntervalUpdate) -> ReplayState:
         """Update or clear the fixed stream interval.
@@ -154,8 +171,8 @@ def create_app(config: ServerConfig, source: TelemetrySource, broadcaster: Broad
         except IndexError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/telemetry/latest", response_model=TelemetryPacket | None)
-    async def telemetry_latest() -> TelemetryPacket | None:
+    @app.get("/telemetry/latest", response_model=TelemetryStreamPacket | None)
+    async def telemetry_latest() -> TelemetryStreamPacket | None:
         """Return the most recently published telemetry packet."""
 
         return source.latest_packet

@@ -18,16 +18,14 @@ help:
 	@echo ""
 	@echo "Configured values from .env:"
 	@echo "  SOURCE=$(SOURCE)"
+	@echo "  INPUT_FILE=$(INPUT_FILE)"
 	@echo "  VBO_FILE=$(VBO_FILE)"
-	@echo "  DBC_FILE=$(DBC_FILE)"
-	@echo "  CAN_INTERFACE=$(CAN_INTERFACE)"
-	@echo "  CAN_CHANNEL=$(CAN_CHANNEL)"
-	@echo "  CAN_BITRATE=$(CAN_BITRATE)"
 	@echo "  HOST=$(HOST)"
 	@echo "  PORT=$(PORT)"
 	@echo "  REPLAY_SPEED=$(REPLAY_SPEED)"
 	@echo "  STREAM_INTERVAL=$(STREAM_INTERVAL)"
 	@echo "  LOOP=$(LOOP)"
+	@echo "  DECODED=$(DECODED)"
 	@echo "  AUTOSTART=$(AUTOSTART)"
 	@echo ""
 	@echo "Example:"
@@ -88,11 +86,14 @@ start:
 	@lsof -ti :8000 -ti :3000 -ti :8761 -ti :8762 -ti :8763 | xargs kill -9 2>/dev/null || true
 	@trap 'kill %1 2>/dev/null || true' SIGINT SIGTERM EXIT; \
 	uv run apexai-server \
+		$(if $(INPUT_FILE),--input-file "$(INPUT_FILE)",) \
+		$(if $(VBO_FILE),--vbo-file "$(VBO_FILE)",) \
 		$(if $(HOST),--host "$(HOST)",) \
 		$(if $(PORT),--port "$(PORT)",) \
 		$(if $(REPLAY_SPEED),--replay-speed "$(REPLAY_SPEED)",) \
 		$(if $(STREAM_INTERVAL),--stream-interval "$(STREAM_INTERVAL)",) \
 		$(LOOP) \
+		$(DECODED) \
 		$(AUTOSTART)
 
 ui:

@@ -11,6 +11,9 @@ class ServerConfig:
     """Runtime configuration created from command-line arguments.
 
     Attributes:
+        input_file: Optional single telemetry file. Supported suffixes are
+            Racelogic VBOX ``.vbo`` and CAN raw hex chunk ``.txt`` captures.
+        decoded: Whether a CAN frame input should be decoded before streaming.
         data_dir: Path to the directory containing Racelogic VBOX ``.vbo`` files to replay.
         host: Network interface uvicorn should bind to.
         port: TCP port uvicorn should listen on.
@@ -20,10 +23,12 @@ class ServerConfig:
         autostart: Whether replay should begin during FastAPI startup.
     """
 
+    input_file: Path | None = None
+    decoded: bool = False
     data_dir: Path = Path("data")
     host: str = "0.0.0.0"
     port: int = 8000
     replay_speed: float = 1.0
     stream_interval: float | None = None
-    loop: bool = False
+    loop: bool = True
     autostart: bool = False

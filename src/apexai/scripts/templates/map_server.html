@@ -1,0 +1,1350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ApexAI CAN Telemetry Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #151712;
+      --panel-bg: rgba(10, 13, 18, 0.84);
+      --panel-strong: rgba(22, 24, 20, 0.92);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --text-primary: #f7f4ea;
+      --text-secondary: #a5a8b3;
+      --accent-speed: #72f4ff;
+      --accent-orange: #ff6a00;
+      --accent-rpm: #ffb300;
+      --accent-throttle: #62e6bc;
+      --accent-brake: #ff3d4d;
+      --accent-gforce: #ff7a1a;
+      --glow-shadow: 0 0 24px rgba(114, 244, 255, 0.22);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      font-family: 'Outfit', 'Inter', sans-serif;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Sidebar Styles */
+    sidebar {
+      background:
+        radial-gradient(circle at 90% 30%, rgba(255, 106, 0, 0.14), transparent 34%),
+        linear-gradient(180deg, rgba(19, 17, 16, 0.98), rgba(8, 10, 13, 0.98));
+      border-right: 3px solid rgba(255, 106, 0, 0.42);
+      padding: 18px 26px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      overflow-y: auto;
+      z-index: 10;
+      box-shadow: 18px 0 36px rgba(0, 0, 0, 0.34);
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 6px;
+      border-bottom: 0;
+    }
+
+    .logo-icon {
+      font-size: 24px;
+      font-weight: 900;
+      color: var(--accent-orange);
+      text-shadow: 0 0 18px rgba(255, 106, 0, 0.28);
+    }
+
+    .logo-text {
+      font-size: 25px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      color: var(--accent-orange);
+    }
+
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+    }
+
+    select, input, button {
+      width: 100%;
+      background: rgba(8, 10, 14, 0.72);
+      border: 1px solid var(--panel-border);
+      color: var(--text-primary);
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--accent-speed);
+      box-shadow: var(--glow-shadow);
+    }
+
+    button {
+      background: rgba(11, 13, 18, 0.86);
+      color: var(--text-primary);
+      font-weight: 800;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    button:hover {
+      opacity: 0.9;
+      box-shadow: var(--glow-shadow);
+    }
+
+    .config-key-wrapper {
+      display: flex;
+      gap: 8px;
+    }
+
+    .stream-button {
+      height: 48px;
+      border-radius: 10px;
+      background: var(--accent-speed);
+      color: #001316;
+      box-shadow: var(--glow-shadow);
+      font-size: 15px;
+      letter-spacing: 0.4px;
+    }
+
+    .stream-button.active {
+      background: var(--accent-orange);
+      color: #130900;
+      box-shadow: 0 0 24px rgba(255, 106, 0, 0.28);
+    }
+
+    /* Highlights & Statistics Panel */
+    .stats-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .stat-name {
+      color: var(--text-secondary);
+    }
+
+    .stat-value {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .sim-status {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      min-height: 34px;
+    }
+
+    .stats-card {
+      background: rgba(3, 5, 8, 0.5);
+      border-radius: 10px;
+    }
+
+    /* Main Dashboard Layout */
+    main {
+      position: relative;
+      display: block;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Map Box */
+    #map-wrapper {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #111827;
+    }
+
+    .map-placeholder {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #0f172a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 5;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .map-placeholder-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .map-placeholder-desc {
+      font-size: 14px;
+      color: var(--text-secondary);
+      max-width: 480px;
+    }
+
+    /* Telemetry Controls & Gauges Row */
+    .dashboard-panel {
+      position: absolute;
+      top: 30px;
+      right: 34px;
+      width: min(724px, calc(100vw - 420px));
+      min-height: 230px;
+      background: rgba(24, 25, 22, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 18px;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 12px;
+      overflow: hidden;
+      z-index: 4;
+      box-shadow: 0 22px 48px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(10px);
+    }
+
+    /* Simulation Control Bar */
+    .control-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      padding-bottom: 12px;
+    }
+
+    .play-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .play-btn {
+      width: 46px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent-speed);
+      border: none;
+      color: #0b0f19;
+      font-size: 18px;
+      cursor: pointer;
+      box-shadow: var(--glow-shadow);
+      transition: transform 0.2s ease;
+    }
+
+    .play-btn:hover {
+      transform: scale(1.05);
+    }
+
+    .multiplier-select {
+      width: 96px;
+      background: rgba(30, 39, 62, 0.8);
+    }
+
+    .scrubber-container {
+      flex-grow: 1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scrubber-slider {
+      flex-grow: 1;
+      -webkit-appearance: none;
+      background: rgba(255,255,255,0.1);
+      height: 6px;
+      border-radius: 3px;
+      outline: none;
+    }
+
+    .scrubber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--accent-speed);
+      cursor: pointer;
+      box-shadow: var(--glow-shadow);
+      transition: transform 0.15s ease;
+    }
+
+    .scrubber-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+    }
+
+    .time-display {
+      font-family: monospace;
+      font-size: 14px;
+      color: var(--text-secondary);
+      min-width: 90px;
+      text-align: right;
+    }
+
+    /* Live Gauges Container */
+    .gauges-container {
+      display: grid;
+      grid-template-columns: 118px 1fr 126px 72px 112px;
+      gap: 18px;
+      flex-grow: 1;
+      align-items: center;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    /* Circular Speed Dial */
+    .gauge-wrapper-circular {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .circle-gauge {
+      width: 96px;
+      height: 96px;
+    }
+
+    .speed-value {
+      font-size: 24px;
+      font-weight: 800;
+      fill: var(--text-primary);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    .gauge-label {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      fill: var(--text-secondary);
+    }
+
+    /* LED Rev Strip (RPM) */
+    .rpm-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      justify-content: center;
+      height: 100%;
+      padding: 0 10px;
+    }
+
+    .rpm-strip-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    .rpm-digital-value {
+      font-family: monospace;
+      font-weight: 700;
+      color: var(--accent-rpm);
+    }
+
+    .rpm-strip-container {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      height: 24px;
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+    }
+
+    .rpm-strip {
+      height: 100%;
+      width: 0%;
+      background: var(--accent-throttle);
+      box-shadow: 0 0 10px rgba(0, 230, 118, 0.4);
+      transition: width 0.1s linear, background-color 0.1s ease;
+    }
+
+    .rpm-strip.glowing-red {
+      box-shadow: 0 0 12px var(--accent-brake);
+    }
+
+    .rpm-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-secondary);
+      font-weight: 500;
+      margin-top: 4px;
+    }
+
+    /* Pedal Inputs (Throttle / Brake) */
+    .pedal-inputs {
+      display: flex;
+      gap: 16px;
+      height: 100px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pedal-bar-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      height: 100%;
+    }
+
+    .pedal-track {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.08);
+      width: 20px;
+      flex-grow: 1;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .pedal-fill {
+      width: 100%;
+      height: 0%;
+      transition: height 0.1s linear;
+    }
+
+    .throttle-fill {
+      background: var(--accent-throttle);
+      box-shadow: 0 0 8px rgba(0, 230, 118, 0.4);
+    }
+
+    .brake-fill {
+      background: var(--accent-brake);
+      box-shadow: 0 0 8px rgba(255, 51, 92, 0.4);
+    }
+
+    .pedal-name {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-secondary);
+    }
+
+    .pedal-value {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* Gear indicator */
+    .gear-indicator {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 96px;
+      background: rgba(0, 0, 0, 0.26);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+    }
+
+    .gear-val {
+      font-size: 42px;
+      font-weight: 900;
+      color: #ffffff;
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.15);
+      line-height: 1;
+    }
+
+    /* G-Force Vector Pad */
+    .gforce-pad-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .gforce-pad {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--panel-border);
+      width: 92px;
+      height: 92px;
+      border-radius: 50%;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .axis {
+      position: absolute;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .horizontal-axis {
+      width: 100%;
+      height: 1px;
+      top: 50%;
+      left: 0;
+    }
+
+    .vertical-axis {
+      height: 100%;
+      width: 1px;
+      left: 50%;
+      top: 0;
+    }
+
+    .gforce-circle {
+      position: absolute;
+      border: 1px dashed rgba(255,255,255,0.04);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .c1 { width: 33.3%; height: 33.3%; }
+    .c2 { width: 66.6%; height: 66.6%; }
+
+    .gforce-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-gforce);
+      box-shadow: 0 0 10px var(--accent-gforce);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: left 0.1s linear, top 0.1s linear;
+    }
+
+    .gforce-pad-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      margin-top: 6px;
+    }
+
+    .gforce-label {
+      position: absolute;
+      font-size: 7px;
+      color: rgba(255,255,255,0.3);
+      font-weight: 600;
+    }
+    .g-top { top: 4px; left: 50%; transform: translateX(-50%); }
+    .g-bottom { bottom: 4px; left: 50%; transform: translateX(-50%); }
+    .g-left { left: 4px; top: 50%; transform: translateY(-50%); }
+    .g-right { right: 4px; top: 50%; transform: translateY(-50%); }
+
+    /* Responsive */
+    @media (max-width: 1000px) {
+      .gauges-container {
+        grid-template-columns: 100px 1fr 120px 80px 100px;
+        gap: 12px;
+      }
+      .circle-gauge {
+        width: 90px;
+        height: 90px;
+      }
+      .speed-value {
+        font-size: 20px;
+      }
+      .gear-val {
+        font-size: 38px;
+      }
+      .gforce-pad {
+        width: 90px;
+        height: 90px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LEFT SIDEBAR -->
+  <sidebar>
+    <div class="logo-container">
+      <div class="logo-icon">&#9650;</div>
+      <div class="logo-text">Telemetry Replay</div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Data Sources</span>
+      <label class="sidebar-label" for="csv-file-select">Decoded CSV</label>
+      <select id="csv-file-select" onchange="loadTelemetryFile()">
+        <option value="">Loading telemetry files...</option>
+      </select>
+      <label class="sidebar-label" for="chunk-file-select">Raw Chunk Log</label>
+      <select id="chunk-file-select">
+        <option value="">Loading chunk files...</option>
+      </select>
+      <div class="sim-status" id="sim-status">CAN stream idle.</div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Stream</span>
+      <button class="stream-button" id="stream-btn" onclick="toggleStream()">Start Stream</button>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Map Color</span>
+      <select id="color-mode" onchange="plotTelemetryRoute()">
+        <option value="solid">Solid Red (Default)</option>
+        <option value="speed">Speed (Cool to Hot)</option>
+        <option value="rpm">Engine RPM (Green to Red)</option>
+        <option value="throttle">Throttle Pedal (Glow Green)</option>
+        <option value="brake">Brake Input (Glow Red)</option>
+        <option value="lat_g">Lateral G Force (Glow Purple)</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">Google Maps API Key</span>
+      <div class="config-key-wrapper">
+        <input type="password" id="api-key-input" placeholder="Enter API Key" />
+        <button id="save-key-btn" onclick="saveApiKey()" style="width: auto; padding: 10px 14px;">Save</button>
+      </div>
+    </div>
+
+    <!-- File Information Cards -->
+    <div class="sidebar-section">
+      <span class="sidebar-label">File Summary</span>
+      <div class="stats-card">
+        <div class="stat-row">
+          <span class="stat-name">Total Rows</span>
+          <span class="stat-value" id="stats-rows">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">GPS Points</span>
+          <span class="stat-value" id="stats-gps">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">Peak Speed</span>
+          <span class="stat-value" id="stats-speed">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">Max Engine RPM</span>
+          <span class="stat-value" id="stats-rpm">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">Peak Brake</span>
+          <span class="stat-value" id="stats-brake">-</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-name">G-Force Peaks</span>
+          <span class="stat-value" id="stats-gforce">-</span>
+        </div>
+      </div>
+    </div>
+  </sidebar>
+
+  <!-- MAIN WINDOW -->
+  <main>
+    <!-- Top Half: Map View -->
+    <div id="map-wrapper">
+      <div id="map"></div>
+      <div class="map-placeholder" id="map-placeholder">
+        <div class="map-placeholder-title">Google Maps API Key Required</div>
+        <div class="map-placeholder-desc">
+          Please input a Google Maps Javascript API Key in the sidebar input box and save it to visualize the CAN GPS track.
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Half: Telemetry Dashboard -->
+    <div class="dashboard-panel">
+      <!-- Simulation Controls -->
+      <div class="control-bar">
+        <div class="play-controls">
+          <button class="play-btn" id="play-btn" onclick="togglePlay()">&#9654;</button>
+          <select class="multiplier-select" id="play-speed" onchange="changePlaybackSpeed()">
+            <option value="1">1x Speed</option>
+            <option value="2">2x Speed</option>
+            <option value="5">5x Speed</option>
+            <option value="10">10x Speed</option>
+            <option value="25">25x Speed</option>
+          </select>
+        </div>
+
+        <div class="scrubber-container">
+          <input type="range" min="0" max="100" value="0" class="scrubber-slider" id="scrubber" oninput="scrub(this.value)" />
+          <div class="time-display" id="time-display">00:00.000</div>
+        </div>
+      </div>
+
+      <!-- Gauges & Telemetry Readouts -->
+      <div class="gauges-container">
+        <!-- circular Speed gauge -->
+        <div class="gauge-wrapper-circular">
+          <svg viewBox="0 0 100 100" class="circle-gauge">
+            <circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,0.06)" stroke-width="6" fill="none" />
+            <circle cx="50" cy="50" r="42" stroke="var(--accent-speed)" stroke-width="6" fill="none"
+                    stroke-dasharray="264" stroke-dashoffset="264" id="speed-ring"
+                    stroke-linecap="round" transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 0.1s linear;" />
+            <text x="50" y="47" text-anchor="middle" dominant-baseline="central" class="speed-value" id="speed-val">0</text>
+            <text x="50" y="70" text-anchor="middle" class="gauge-label">SPEED MPH</text>
+          </svg>
+        </div>
+
+        <!-- Rev counter (RPM) -->
+        <div class="rpm-container">
+          <div class="rpm-strip-header">
+            <span class="sidebar-label" style="color: var(--text-primary);">Engine Speed</span>
+            <span class="rpm-digital-value"><span id="rpm-val">0</span> RPM</span>
+          </div>
+          <div class="rpm-strip-container">
+            <div class="rpm-strip" id="rpm-strip"></div>
+          </div>
+          <div class="rpm-labels">
+            <span>0</span><span>1k</span><span>2k</span><span>3k</span><span>4k</span><span>5k</span><span>6k</span><span>7k</span><span>8k</span>
+          </div>
+        </div>
+
+        <!-- Throttle & Brake Pedals -->
+        <div class="pedal-inputs">
+          <div class="pedal-bar-wrapper">
+            <span class="pedal-name">THR</span>
+            <div class="pedal-track">
+              <div class="pedal-fill throttle-fill" id="throttle-fill"></div>
+            </div>
+            <span class="pedal-value" id="throttle-val">0%</span>
+          </div>
+          <div class="pedal-bar-wrapper">
+            <span class="pedal-name">BRK</span>
+            <div class="pedal-track">
+              <div class="pedal-fill brake-fill" id="brake-fill"></div>
+            </div>
+            <span class="pedal-value" id="brake-val">0 psi</span>
+          </div>
+        </div>
+
+        <!-- Active Gear -->
+        <div class="gear-indicator">
+          <span class="gauge-label" style="margin-bottom: 8px;">GEAR</span>
+          <div class="gear-val" id="gear-val">N</div>
+        </div>
+
+        <!-- G-Force Vector plot -->
+        <div class="gforce-pad-container">
+          <div class="gforce-pad">
+            <div class="axis horizontal-axis"></div>
+            <div class="axis vertical-axis"></div>
+            <div class="gforce-circle c1"></div>
+            <div class="gforce-circle c2"></div>
+            <div class="gforce-dot" id="gforce-dot"></div>
+            <span class="gforce-label g-top">1.5G</span>
+            <span class="gforce-label g-bottom">-1.5G</span>
+            <span class="gforce-label g-left">-1.5G</span>
+            <span class="gforce-label g-right">1.5G</span>
+          </div>
+          <span class="gforce-pad-label" id="gforce-txt">0.00 G</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const DEFAULT_API_KEY = __DEFAULT_API_KEY_JSON__;
+    let telemetryData = null;
+    let map = null;
+    let googleMapsLoaded = false;
+    let isPlaying = false;
+    let playIndex = 0;
+    let playTimer = null;
+    let playbackSpeed = 1;
+    let playbackStartWallMs = 0;
+    let playbackStartTimestamp = null;
+    let playbackStartIndex = 0;
+
+    let currentPolylines = [];
+    let startMarker = null;
+    let finishMarker = null;
+    let cursorMarker = null;
+
+    const darkMapStyle = [
+      { "elementType": "geometry", "stylers": [{ "color": "#111625" }] },
+      { "elementType": "labels.text.stroke", "stylers": [{ "color": "#111625" }] },
+      { "elementType": "labels.text.fill", "stylers": [{ "color": "#637381" }] },
+      { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#8c9ba5" }] },
+      { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#8c9ba5" }] },
+      { "featureType": "poi.park", "elementType": "geometry", "stylers": [{ "color": "#162030" }] },
+      { "featureType": "poi.park", "elementType": "labels.text.fill", "stylers": [{ "color": "#536473" }] },
+      { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#1c2536" }] },
+      { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#161b26" }] },
+      { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#7a8a99" }] },
+      { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#26354a" }] },
+      { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#1d2736" }] },
+      { "featureType": "road.highway", "elementType": "labels.text.fill", "stylers": [{ "color": "#a4b5c4" }] },
+      { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#060912" }] },
+      { "featureType": "water", "elementType": "labels.text.fill", "stylers": [{ "color": "#3f4c59" }] }
+    ];
+
+    // Page initialization
+    window.addEventListener("DOMContentLoaded", () => {
+      // Setup saved API Key
+      const savedKey = localStorage.getItem("google_maps_api_key") || DEFAULT_API_KEY || "";
+      document.getElementById("api-key-input").value = savedKey;
+      if (savedKey) {
+        document.getElementById("map-placeholder").style.display = "none";
+        loadGoogleMapsScript(savedKey);
+      }
+
+      // Fetch file list
+      fetch("/api/files")
+        .then(res => res.json())
+        .then(files => {
+          const select = document.getElementById("csv-file-select");
+          select.innerHTML = "";
+          if (files.length === 0) {
+            select.innerHTML = '<option value="">No CSV files found</option>';
+            return;
+          }
+          files.forEach(f => {
+            const opt = document.createElement("option");
+            opt.value = f.path;
+            opt.textContent = `${f.directory} / ${f.name} (${(f.size / 1024 / 1024).toFixed(2)} MB)`;
+            select.appendChild(opt);
+          });
+          // Load first file
+          loadTelemetryFile();
+        })
+        .catch(err => {
+          console.error("Error fetching files:", err);
+          document.getElementById("csv-file-select").innerHTML = '<option value="">Error loading files</option>';
+        });
+
+      fetch("/api/chunk-files")
+        .then(res => res.json())
+        .then(files => {
+          const select = document.getElementById("chunk-file-select");
+          select.innerHTML = "";
+          
+          // Add dynamic sync option at the top
+          const dynOpt = document.createElement("option");
+          dynOpt.value = "DYNAMIC_CSV";
+          dynOpt.textContent = "Sync with Decoded CSV (Dynamic CAN)";
+          select.appendChild(dynOpt);
+          
+          files.forEach(f => {
+            const opt = document.createElement("option");
+            opt.value = f.path;
+            opt.textContent = `${f.directory} / ${f.name} (${(f.size / 1024).toFixed(1)} KB)`;
+            select.appendChild(opt);
+          });
+          autoSelectChunkForCurrentCsv();
+        })
+        .catch(err => {
+          console.error("Error fetching chunk files:", err);
+          document.getElementById("chunk-file-select").innerHTML = '<option value="">Error loading chunks</option>';
+        });
+
+      fetch("/api/chunk-replay/status")
+        .then(res => res.json())
+        .then(status => {
+          setSimStatus(`CAN simulator listening on ${status.bind}:${status.port} · client ${status.clientConnected ? "connected" : "waiting"}`);
+        })
+        .catch(() => setSimStatus("CAN simulator status unavailable."));
+    });
+
+    function loadGoogleMapsScript(key) {
+      window.initMap = initMap;
+      const script = document.createElement("script");
+      script.id = "google-maps-script";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=initMap`;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    function saveApiKey() {
+      const key = document.getElementById("api-key-input").value.trim();
+      if (key) {
+        localStorage.setItem("google_maps_api_key", key);
+        document.getElementById("map-placeholder").style.display = "none";
+        // Reload page to re-initialize Google Maps
+        window.location.reload();
+      } else {
+        localStorage.removeItem("google_maps_api_key");
+        alert("API Key cleared.");
+      }
+    }
+
+    function initMap() {
+      googleMapsLoaded = true;
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 38.159, lng: -122.453 },
+        zoom: 15,
+        mapTypeId: "satellite",
+        tilt: 0,
+        disableDefaultUI: true,
+        zoomControl: true,
+        fullscreenControl: false
+      });
+      if (telemetryData) {
+        plotTelemetryRoute();
+      }
+    }
+
+    function loadTelemetryFile() {
+      pause();
+      const path = document.getElementById("csv-file-select").value;
+      if (!path) return;
+      autoSelectChunkForCurrentCsv();
+
+      // Reset UI elements
+      document.getElementById("stats-rows").textContent = "Loading...";
+      document.getElementById("stats-gps").textContent = "Loading...";
+
+      fetch(`/api/points?file=${encodeURIComponent(path)}`)
+        .then(res => res.json())
+        .then(res => {
+          if (res.error) {
+            alert("Error loading file: " + res.error);
+            return;
+          }
+          telemetryData = res;
+          
+          // Populate Stats Cards
+          document.getElementById("stats-rows").textContent = res.stats.lines.toLocaleString();
+          document.getElementById("stats-gps").textContent = res.stats.valid_gps_points.toLocaleString();
+          document.getElementById("stats-speed").textContent = `${(res.stats.max_speed * 0.621371).toFixed(1)} mph`;
+          document.getElementById("stats-rpm").textContent = `${Math.round(res.stats.max_rpm)} RPM`;
+          document.getElementById("stats-brake").textContent = `${Math.round(res.stats.max_brake_psi)} psi`;
+          
+          const maxG = Math.max(Math.abs(res.stats.min_lat_g), Math.abs(res.stats.max_lat_g));
+          const maxInlineG = Math.max(Math.abs(res.stats.min_inline_g), Math.abs(res.stats.max_inline_g));
+          document.getElementById("stats-gforce").textContent = `${maxG.toFixed(2)}G Lat / ${maxInlineG.toFixed(2)}G`;
+
+          // Setup Scrubber Slider
+          const scrubber = document.getElementById("scrubber");
+          const samples = telemetrySamples();
+          scrubber.max = Math.max(0, samples.length - 1);
+          scrubber.value = 0;
+          playIndex = 0;
+
+          // Render Route
+          plotTelemetryRoute();
+        })
+        .catch(err => {
+          console.error("Error fetching telemetry:", err);
+          alert("Error parsing CSV: check server log");
+        });
+    }
+
+    function autoSelectChunkForCurrentCsv() {
+      const csvSelect = document.getElementById("csv-file-select");
+      const chunkSelect = document.getElementById("chunk-file-select");
+      if (!csvSelect || !chunkSelect || !csvSelect.value || chunkSelect.options.length === 0) return;
+
+      const csvName = csvSelect.value.split("/").pop();
+      const expectedChunkName = csvName
+        .replace("can_raw_frames", "can_raw_hex_chunks")
+        .replace("_decoded.csv", ".txt")
+        .replace(".csv", ".txt");
+
+      for (const option of chunkSelect.options) {
+        if (option.value.endsWith(expectedChunkName)) {
+          chunkSelect.value = option.value;
+          setSimStatus(`Matched raw chunks: ${expectedChunkName}`);
+          return;
+        }
+      }
+      chunkSelect.value = "DYNAMIC_CSV";
+      setSimStatus("Using dynamic CAN stream from CSV");
+    }
+
+    function getPointColor(p, mode) {
+      const stats = telemetryData.stats;
+      if (mode === "speed") {
+        const max = stats.max_speed || 100;
+        const ratio = Math.max(0, Math.min(1, p.speed / max));
+        const hue = 220 - (ratio * 220); // 220 (cool blue) to 0 (red)
+        return `hsl(${hue}, 100%, 50%)`;
+      } else if (mode === "rpm") {
+        const max = stats.max_rpm || 7000;
+        const ratio = Math.max(0, Math.min(1, p.rpm / max));
+        const hue = 120 - (ratio * 120); // green to red
+        return `hsl(${hue}, 100%, 50%)`;
+      } else if (mode === "throttle") {
+        const ratio = Math.max(0, Math.min(1, (p.throttle || 0) / 100));
+        return ratio > 0.02 ? `rgba(0, 230, 118, ${0.3 + ratio * 0.7})` : "rgba(255,255,255,0.2)";
+      } else if (mode === "brake") {
+        const max = stats.max_brake_psi || 500;
+        const ratio = Math.max(0, Math.min(1, (p.brakePressurePsi || 0) / max));
+        return ratio > 0.02 ? `rgba(255, 51, 92, ${0.3 + ratio * 0.7})` : "rgba(255,255,255,0.2)";
+      } else if (mode === "lat_g") {
+        const max = Math.max(Math.abs(stats.min_lat_g), Math.abs(stats.max_lat_g)) || 1.0;
+        const ratio = Math.max(0, Math.min(1, Math.abs(p.lateralAccelG || 0) / max));
+        return ratio > 0.02 ? `rgba(213, 0, 249, ${0.3 + ratio * 0.7})` : "rgba(255,255,255,0.2)";
+      }
+      return "#ff335c";
+    }
+
+    function plotTelemetryRoute() {
+      if (!googleMapsLoaded || !map || !telemetryData || !telemetryData.points || telemetryData.points.length === 0) return;
+
+      currentPolylines.forEach(p => p.setMap(null));
+      currentPolylines = [];
+      if (startMarker) startMarker.setMap(null);
+      if (finishMarker) finishMarker.setMap(null);
+      if (cursorMarker) cursorMarker.setMap(null);
+
+      const points = telemetryData.points;
+      const colorMode = document.getElementById("color-mode").value;
+
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+      map.fitBounds(bounds);
+
+      if (colorMode === "solid") {
+        const path = points.map(p => ({ lat: p.lat, lng: p.lng }));
+        const poly = new google.maps.Polyline({
+          path: path,
+          geodesic: true,
+          strokeColor: "#ff6a00",
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
+          map: map
+        });
+        currentPolylines.push(poly);
+      } else {
+        // Plot segments to dynamically show heat maps
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i+1];
+          const color = getPointColor(p1, colorMode);
+          const poly = new google.maps.Polyline({
+            path: [{ lat: p1.lat, lng: p1.lng }, { lat: p2.lat, lng: p2.lng }],
+            geodesic: true,
+            strokeColor: color,
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            map: map
+          });
+          currentPolylines.push(poly);
+        }
+      }
+
+      // Start marker
+      startMarker = new google.maps.Marker({
+        position: { lat: points[0].lat, lng: points[0].lng },
+        map: map,
+        label: { text: "S", color: "#ffffff", fontWeight: "bold" },
+        title: "Start Line",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#00e676",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 12
+        }
+      });
+
+      // Finish marker
+      finishMarker = new google.maps.Marker({
+        position: { lat: points[points.length - 1].lat, lng: points[points.length - 1].lng },
+        map: map,
+        label: { text: "F", color: "#ffffff", fontWeight: "bold" },
+        title: "Finish Line",
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#ff335c",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 12
+        }
+      });
+
+      // Live animated cursor marker
+      cursorMarker = new google.maps.Marker({
+        position: { lat: points[0].lat, lng: points[0].lng },
+        map: map,
+        title: "Active Lap Position",
+        zIndex: 999,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#00e5ff",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 8
+        }
+      });
+
+      updateActivePoint(0);
+    }
+
+    function telemetrySamples() {
+      return telemetryData?.samples?.length ? telemetryData.samples : (telemetryData?.points || []);
+    }
+
+    function updateActivePoint(index) {
+      const samples = telemetrySamples();
+      if (!telemetryData || !samples || index >= samples.length) return;
+      const p = samples[index];
+      playIndex = index;
+
+      // Update maps cursor
+      if (cursorMarker && p.lat !== null && p.lng !== null) {
+        cursorMarker.setPosition({ lat: p.lat, lng: p.lng });
+      }
+
+      // Speed circular gauge
+      const ring = document.getElementById("speed-ring");
+      const maxSpeed = telemetryData.stats.max_speed || 100;
+      const speedPct = Math.max(0, Math.min(1, p.speed / maxSpeed));
+      const dashOffset = 264 - (speedPct * 264);
+      ring.style.strokeDashoffset = dashOffset;
+      document.getElementById("speed-val").textContent = Math.round(p.speed * 0.621371);
+
+      // RPM Led Strip
+      const strip = document.getElementById("rpm-strip");
+      const rpmVal = Math.round(p.rpm);
+      const rpmMax = 8000;
+      const pct = Math.max(0, Math.min(100, (p.rpm / rpmMax) * 100));
+      strip.style.width = `${pct}%`;
+      document.getElementById("rpm-val").textContent = rpmVal.toLocaleString();
+      
+      if (rpmVal > 6800) {
+        strip.style.backgroundColor = "var(--accent-brake)";
+        strip.classList.add("glowing-red");
+      } else if (rpmVal > 5600) {
+        strip.style.backgroundColor = "var(--accent-rpm)";
+        strip.classList.remove("glowing-red");
+      } else {
+        strip.style.backgroundColor = "var(--accent-throttle)";
+        strip.classList.remove("glowing-red");
+      }
+
+      // Pedals (Throttle & Brake)
+      const throttlePct = Math.max(0, Math.min(100, p.throttle || 0));
+      document.getElementById("throttle-fill").style.height = `${throttlePct}%`;
+      document.getElementById("throttle-val").textContent = `${Math.round(throttlePct)}%`;
+
+      const maxBrake = telemetryData.stats.max_brake_psi || 500;
+      const brakePct = Math.max(0, Math.min(100, ((p.brakePressurePsi || 0) / maxBrake) * 100));
+      document.getElementById("brake-fill").style.height = `${brakePct}%`;
+      document.getElementById("brake-val").textContent = `${Math.round(p.brakePressurePsi || 0)} psi`;
+
+      // Gear indicator
+      let gearStr = p.gear;
+      if (gearStr === 0) gearStr = "N";
+      else if (gearStr === 7) gearStr = "R";
+      document.getElementById("gear-val").textContent = gearStr;
+
+      // G-Force Vector Pad
+      const maxDisplayG = 1.5;
+      const xPct = 50 + (p.lateralAccelG / maxDisplayG) * 50;
+      const yPct = 50 - (p.inlineAccelG / maxDisplayG) * 50;
+      
+      const dot = document.getElementById("gforce-dot");
+      dot.style.left = `${Math.max(0, Math.min(100, xPct))}%`;
+      dot.style.top = `${Math.max(0, Math.min(100, yPct))}%`;
+
+      const totalG = Math.sqrt(p.lateralAccelG * p.lateralAccelG + p.inlineAccelG * p.inlineAccelG);
+      document.getElementById("gforce-txt").textContent = `${totalG.toFixed(2)} G`;
+
+      // Scrubber and time
+      document.getElementById("scrubber").value = index;
+      if (p.timestamp) {
+        const date = new Date(p.timestamp * 1000);
+        // Format timestamp relative to run duration if needed, or simple direct timestamp format
+        const mins = String(date.getMinutes()).padStart(2, '0');
+        const secs = String(date.getSeconds()).padStart(2, '0');
+        const ms = String(date.getMilliseconds()).padStart(3, '0');
+        document.getElementById("time-display").textContent = `${mins}:${secs}.${ms}`;
+      } else {
+        document.getElementById("time-display").textContent = `Idx: ${p.sequence || index}`;
+      }
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        pause();
+      } else {
+        play();
+      }
+    }
+
+    function toggleStream() {
+      togglePlay();
+    }
+
+    function play() {
+      if (isPlaying) return;
+      const samples = telemetrySamples();
+      if (!samples || samples.length === 0) return;
+      isPlaying = true;
+      playbackStartWallMs = performance.now();
+      playbackStartIndex = playIndex;
+      playbackStartTimestamp = samples[playIndex]?.timestamp ?? null;
+      document.getElementById("play-btn").innerHTML = "&#9646;&#9646;"; // Pause icon
+      document.getElementById("stream-btn").textContent = "Stop Stream";
+      document.getElementById("stream-btn").classList.add("active");
+      startChunkReplay();
+
+      const step = () => {
+        if (!isPlaying) return;
+        const samples = telemetrySamples();
+        if (!samples || samples.length === 0) return;
+
+        if (playbackStartTimestamp !== null && samples[playbackStartIndex]?.timestamp !== null) {
+          const elapsedSeconds = ((performance.now() - playbackStartWallMs) / 1000) * playbackSpeed;
+          const targetTimestamp = playbackStartTimestamp + elapsedSeconds;
+          while (
+            playIndex + 1 < samples.length &&
+            samples[playIndex + 1].timestamp !== null &&
+            samples[playIndex + 1].timestamp <= targetTimestamp
+          ) {
+            playIndex += 1;
+          }
+        } else {
+          playIndex += playbackSpeed;
+        }
+
+        if (playIndex >= samples.length) {
+          playIndex = 0;
+          playbackStartWallMs = performance.now();
+          playbackStartIndex = 0;
+          playbackStartTimestamp = samples[0]?.timestamp ?? null;
+        }
+        updateActivePoint(playIndex);
+        playTimer = setTimeout(step, 33);
+      };
+      step();
+    }
+
+    function pause() {
+      isPlaying = false;
+      if (playTimer) {
+        clearTimeout(playTimer);
+        playTimer = null;
+      }
+      stopChunkReplay();
+      document.getElementById("play-btn").innerHTML = "&#9654;"; // Play icon
+      document.getElementById("stream-btn").textContent = "Start Stream";
+      document.getElementById("stream-btn").classList.remove("active");
+    }
+
+    function changePlaybackSpeed() {
+      playbackSpeed = parseInt(document.getElementById("play-speed").value);
+    }
+
+    function scrub(val) {
+      pause();
+      playIndex = parseInt(val);
+      updateActivePoint(playIndex);
+    }
+
+    function selectedChunkFile() {
+      const select = document.getElementById("chunk-file-select");
+      return select ? select.value : "";
+    }
+
+    function setSimStatus(text) {
+      document.getElementById("sim-status").textContent = text;
+    }
+
+    function startChunkReplay() {
+      let chunkFile = selectedChunkFile();
+      if (chunkFile === "DYNAMIC_CSV") {
+        const csvSelect = document.getElementById("csv-file-select");
+        if (csvSelect && csvSelect.value) {
+          chunkFile = csvSelect.value;
+        } else {
+          setSimStatus("No Decoded CSV selected to sync stream.");
+          return;
+        }
+      }
+      if (!chunkFile) {
+        setSimStatus("No raw chunk file selected.");
+        return;
+      }
+
+      fetch("/api/chunk-replay/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: chunkFile,
+          speed: playbackSpeed,
+          loop: false
+        })
+      })
+        .then(res => res.json())
+        .then(status => {
+          if (status.error) {
+            setSimStatus(`CAN stream error: ${status.error}`);
+            return;
+          }
+          setSimStatus(`CAN stream on ${status.bind}:${status.port} · client ${status.clientConnected ? "connected" : "waiting"}`);
+        })
+        .catch(err => {
+          console.error("Error starting CAN chunk replay:", err);
+          setSimStatus("CAN stream failed to start.");
+        });
+    }
+
+    function stopChunkReplay() {
+      fetch("/api/chunk-replay/stop", { method: "POST" })
+        .then(res => res.json())
+        .then(status => {
+          setSimStatus(`CAN stream stopped · sent ${status.sentChunks || 0}/${status.totalChunks || 0} chunks`);
+        })
+        .catch(err => {
+          console.error("Error stopping CAN chunk replay:", err);
+        });
+    }
+  </script>
+</body>
+</html>

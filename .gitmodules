@@ -2,7 +2,9 @@
 	path = mobile
 	url = git@github.com:seagomezar/sonoma-racing-coach.git
 	branch = main
+
 [submodule "dashboard"]
 	path = dashboard
 	url = https://github.com/VikramTiwari/ideal-racing-ling.git
 	branch = main
+

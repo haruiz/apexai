@@ -96,10 +96,10 @@ graph TD
 The project synthesizes bleeding-edge technologies across Python, Rust, TypeScript, and Kotlin. Here are the core stacks and unique engineering solutions used:
 
 ### Backend (ApexAI Server)
-- **Tech Stack:** Python 3.11, FastAPI, Uvicorn, `python-can`, `cantools`.
+- **Tech Stack:** Python 3.11, FastAPI, Uvicorn.
 - **Unique Innovations:**
   - **Dual-Protocol Broadcasting:** Seamlessly transmits live telemetry across both **Server-Sent Events (SSE)** (for stateless web UIs) and **WebSockets** (for low-latency mobile edge apps) concurrently.
-  - **Live CAN & Legacy VBOX Support:** Fuses live CAN bus ingestion (via `cantools` and DBC signal mapping) and legacy Racelogic `.vbo` text file replay into a single, unified `TelemetryPacket` schema.
+  - **CAN Raw Chunk & Legacy VBOX Support:** Replays recorded CAN raw hex chunks without transforming them, while normalizing legacy Racelogic `.vbo` text files into `TelemetryPacket` objects.
 
 ### Data Engineering (Static Asset Engine)
 - **Tech Stack:** Rust (`serde`, `serde_json`).
@@ -126,13 +126,14 @@ The project synthesizes bleeding-edge technologies across Python, Rust, TypeScri
 
 ### Key Features & Implementation
 - **Framework:** Python, FastAPI, and `uvicorn`.
-- **Sources:** Supports both recorded Racelogic VBOX `.vbo` files and live CAN ingestion (via `python-can` and DBC decoding).
+- **Sources:** Supports recorded Racelogic VBOX `.vbo` files and recorded CAN raw hex chunk files.
 - **Streaming Protocols:** Telemetry is broadcast simultaneously via **Server-Sent Events (SSE)** (for the Dashboard) and **WebSockets** (for the mobile app).
-- **Hardened Configuration:** The server auto-discovers all `.vbo` files inside the `./data/` directory and streams them continuously.
+- **Hardened Configuration:** The server can stream a selected `.vbo` or `can_raw_hex_chunks*.txt` file, and still supports directory-based VBOX replay.
 
 ### Core Algorithms
-- **Coordinate Normalization (Pure Minutes):** Raw VBO datasets often export GPS coordinates purely in minutes rather than standard degrees. The server's `vbo_parser.py` implements a translation algorithm:
-  - `Decimal Degrees = abs(Minutes) / 60.0`
+- **Coordinate Normalization:** Raw VBO datasets can export GPS coordinates as pure minutes or as degrees plus decimal minutes. The server's `vbo_parser.py` handles both:
+  - Pure minutes: `Decimal Degrees = abs(Minutes) / 60.0`
+  - Degrees plus minutes: `Decimal Degrees = degrees + minutes / 60.0`
   - *Sign Correction:* VBOX standard uses positive numbers for Western longitudes. The parser inverts the longitude sign to conform to standard GPS (WGS84) conventions, accurately placing the telemetry at Sonoma Raceway.
 - **Time Interpolation:** Replays recorded data at true-to-life cadence or fixed streaming intervals (e.g., 10Hz) to replicate live hardware environments.
 

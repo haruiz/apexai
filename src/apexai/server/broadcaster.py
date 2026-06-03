@@ -6,7 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 
-from .schemas import TelemetryPacket
+from .schemas import TelemetryStreamPacket
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,10 @@ class Broadcaster:
         """
 
         self._queue_size = queue_size
-        self._subscribers: set[asyncio.Queue[TelemetryPacket]] = set()
+        self._subscribers: set[asyncio.Queue[TelemetryStreamPacket]] = set()
         self._lock = asyncio.Lock()
 
-    async def publish(self, packet: TelemetryPacket) -> None:
+    async def publish(self, packet: TelemetryStreamPacket) -> None:
         """Publish a telemetry packet to all current subscribers.
 
         Args:
@@ -58,20 +58,20 @@ class Broadcaster:
                 except asyncio.QueueFull:
                     logger.debug("dropping telemetry packet for overloaded subscriber")
 
-    async def subscribe(self) -> asyncio.Queue[TelemetryPacket]:
+    async def subscribe(self) -> asyncio.Queue[TelemetryStreamPacket]:
         """Create and register a subscriber queue.
 
         Returns:
             A bounded asyncio queue that receives future telemetry packets.
         """
 
-        queue: asyncio.Queue[TelemetryPacket] = asyncio.Queue(maxsize=self._queue_size)
+        queue: asyncio.Queue[TelemetryStreamPacket] = asyncio.Queue(maxsize=self._queue_size)
         async with self._lock:
             self._subscribers.add(queue)
         logger.info("telemetry client subscribed; subscribers=%s", len(self._subscribers))
         return queue
 
-    async def unsubscribe(self, queue: asyncio.Queue[TelemetryPacket]) -> None:
+    async def unsubscribe(self, queue: asyncio.Queue[TelemetryStreamPacket]) -> None:
         """Remove a subscriber queue.
 
         Args:
@@ -86,7 +86,7 @@ class Broadcaster:
             count = len(self._subscribers)
         logger.info("telemetry client unsubscribed; subscribers=%s", count)
 
-    async def stream(self) -> AsyncIterator[TelemetryPacket]:
+    async def stream(self) -> AsyncIterator[TelemetryStreamPacket]:
         """Yield telemetry packets from a temporary subscription.
 
         Returns:

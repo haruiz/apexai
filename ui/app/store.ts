@@ -4,29 +4,34 @@ export type ReplayStatus = "idle" | "playing" | "paused" | "stopped" | "finished
 
 export type ReplayState = {
   status: ReplayStatus;
+  source?: "vbo" | "can";
   current_index: number;
   total_samples: number;
   replay_speed: number;
   stream_interval: number | null;
   loop: boolean;
   vbo_file: string;
+  source_file?: string | null;
 };
 
 export type TelemetryPacket = {
+  source?: "can";
   sequence: number;
   timestamp: number;
-  latitude: number | null;
-  longitude: number | null;
-  speed: number | null;
-  heading: number | null;
-  altitude: number | null;
-  satellites: number | null;
-  throttle: number | null;
-  brake: number | null;
-  steering: number | null;
-  gear: number | null;
-  lap: number | null;
-  raw: Record<string, unknown>;
+  latitude?: number | null;
+  longitude?: number | null;
+  speed?: number | null;
+  heading?: number | null;
+  altitude?: number | null;
+  satellites?: number | null;
+  throttle?: number | null;
+  brake?: number | null;
+  steering?: number | null;
+  gear?: number | null;
+  lap?: number | null;
+  raw?: Record<string, unknown>;
+  line?: string;
+  chunk?: string;
 };
 
 type ConnectionState = "offline" | "connecting" | "live";
@@ -51,6 +56,7 @@ type TelemetryStore = {
   acceptTiming: (streamInterval: number | null, replaySpeed: number) => void;
   resetTelemetry: () => void;
   pushPacket: (packet: TelemetryPacket) => void;
+  pushPackets: (packets: TelemetryPacket[]) => void;
 };
 
 const MAX_POINTS = 1800;
@@ -98,6 +104,26 @@ export const useTelemetryStore = create<TelemetryStore>((set) => ({
       return {
         latest: packet,
         history: [...state.history, packet].slice(-MAX_POINTS)
+      };
+    }),
+  pushPackets: (packets) =>
+    set((state) => {
+      if (!state.telemetryActive || packets.length === 0) {
+        return state;
+      }
+      let latest = state.latest;
+      const history = [...state.history];
+      for (const packet of packets) {
+        if (history[history.length - 1]?.sequence === packet.sequence) {
+          latest = packet;
+        } else {
+          latest = packet;
+          history.push(packet);
+        }
+      }
+      return {
+        latest,
+        history: history.slice(-MAX_POINTS)
       };
     })
 }));

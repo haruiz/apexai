@@ -208,9 +208,11 @@ def _timestamp_seconds(value: Any, sequence: int) -> float:
 def _coordinate(value: Any, *, is_longitude: bool) -> float | None:
     """Normalize a latitude or longitude value to WGS84 decimal degrees.
 
-    Racelogic VBOX exports in this repository store GPS coordinates as
-    pure minutes, so Sonoma latitude ``2289.604620`` becomes
-    ``38.160077`` and longitude ``7347.301854`` becomes ``-122.455031``.
+    Racelogic VBOX files commonly store coordinates as degrees and decimal
+    minutes: latitude uses ``ddmm.mmmmm`` and longitude uses ``dddmm.mmmmm``.
+    Some files in this repository instead store the whole coordinate as decimal
+    minutes, where ``2289.604620`` means ``2289.604620 / 60`` degrees. Positive
+    longitudes are west in VBOX files, so they are inverted for WGS84.
     If a future source is already in decimal degrees, leave it unchanged.
     """
     number = _optional_float(value)
@@ -220,7 +222,15 @@ def _coordinate(value: Any, *, is_longitude: bool) -> float | None:
     if abs(number) <= limit:
         return number
 
-    decimal = abs(number) / 60.0
+    absolute = abs(number)
+    degrees = math.floor(absolute / 100.0)
+    minutes = absolute - (degrees * 100.0)
+    if is_longitude and degrees < 100 and (absolute / 60.0) <= limit:
+        decimal = absolute / 60.0
+    elif minutes < 60.0:
+        decimal = degrees + (minutes / 60.0)
+    else:
+        decimal = absolute / 60.0
 
     if is_longitude:
         # VBOX standard: Positive is West, Negative is East
